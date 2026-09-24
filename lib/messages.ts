@@ -13,6 +13,8 @@ export type MessageRequest =
   | { type: 'GET_RECENT_ENTRY_IDS' }
   | { type: 'GET_ENTRY'; payload: { id: string } }
   | { type: 'CREATE_ENTRY'; payload: { entry: Omit<EntryData, 'id' | 'created' | 'modified'> } }
+  | { type: 'IMPORT_CSV_ENTRIES'; payload: { entries: Array<Omit<EntryData, 'id' | 'created' | 'modified'>> } }
+  | { type: 'UNDO_CSV_IMPORT'; payload: { ids: string[] } }
   | { type: 'UPDATE_ENTRY'; payload: { entry: EntryData } }
   | { type: 'DELETE_ENTRY'; payload: { id: string; password: string } }
   | { type: 'GET_GROUPS' }
@@ -43,6 +45,7 @@ export type StateResponse = MessageResponse<AppState>;
 export type EntriesResponse = MessageResponse<EntryData[]>;
 
 export type EntryResponse = MessageResponse<EntryData>;
+export type ImportedEntriesResponse = MessageResponse<EntryData[]>;
 export type SaveMatchResponse = MessageResponse<SaveMatchData | null>;
 export type PendingCredentialResponse = MessageResponse<PendingCredentialData | null>;
 

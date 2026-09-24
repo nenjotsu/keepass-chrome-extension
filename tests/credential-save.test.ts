@@ -6,7 +6,7 @@ function makeForm(autocomplete: string[] = []): HTMLFormElement {
   for (const value of autocomplete) {
     const input = document.createElement('input');
     input.type = 'password';
-    input.autocomplete = value;
+    input.setAttribute('autocomplete', value);
     form.append(input);
   }
   return form;

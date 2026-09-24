@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPageAutofill } from '@/lib/page-autofill';
 
-describe('automatic page autofill', () => {
+describe('user-initiated page autofill', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
   });
 
-  it('fills the first visible login form and dispatches input events', () => {
+  it('keeps credentials out of the page until the user clicks Fill', () => {
     document.body.innerHTML = `
       <form>
         <input type="text" name="username">
@@ -26,18 +26,21 @@ describe('automatic page autofill', () => {
     user.addEventListener('change', changeEvents);
     password.addEventListener('change', changeEvents);
 
-    const autofill = createPageAutofill(document);
-    const result = autofill.tryFill({ username: 'alice', password: 'secret', autoLogin: false });
+    const autofill = createPageAutofill(document, () => true);
+    const fillButton = autofill.offer([{ title: 'Example', username: 'alice', password: 'secret' }]);
 
-    expect(result).not.toBeNull();
+    expect(user.value).toBe('');
+    expect(password.value).toBe('');
+    expect(fillButton).not.toBeNull();
+    fillButton!.click();
     expect(user.value).toBe('alice');
     expect(password.value).toBe('secret');
     expect(inputEvents).toHaveBeenCalledTimes(2);
     expect(changeEvents).toHaveBeenCalledTimes(2);
-    expect(document.querySelectorAll('form')[1].querySelector('input[type="password"]')?.value).toBe('');
+    expect(document.querySelectorAll('form')[1].querySelector<HTMLInputElement>('input[type="password"]')?.value).toBe('');
   });
 
-  it('submits once after filling when Auto Login is enabled and a clear submit button exists', () => {
+  it('does not submit the form after the user clicks Fill', () => {
     document.body.innerHTML = `
       <form>
         <input type="text" autocomplete="username">
@@ -46,34 +49,38 @@ describe('automatic page autofill', () => {
       </form>`;
     const form = document.querySelector('form')!;
     form.querySelectorAll('input, button').forEach(makeVisible);
-    const submit = vi.spyOn(form.querySelector('button')!, 'click').mockImplementation(() => {});
-    const autofill = createPageAutofill(document);
+    const submit = vi.fn((event: Event) => event.preventDefault());
+    form.addEventListener('submit', submit);
+    const fillButton = createPageAutofill(document, () => true).offer([
+      { title: 'Example', username: 'alice', password: 'secret' },
+    ]);
 
-    expect(autofill.tryFill({ username: 'alice', password: 'secret', autoLogin: true })).not.toBeNull();
-    expect(autofill.tryFill({ username: 'bob', password: 'other', autoLogin: true })).toBeNull();
+    fillButton!.click();
 
-    expect(submit).toHaveBeenCalledTimes(1);
-    expect(form.querySelector('input[type="text"]')?.value).toBe('alice');
+    expect(submit).not.toHaveBeenCalled();
+    expect(form.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe('alice');
   });
 
-  it('does not submit when Auto Login is enabled but no clear submit button exists', () => {
+  it('ignores synthetic clicks that a website script could trigger', () => {
     document.body.innerHTML = `
       <form>
         <input type="text" name="username">
         <input type="password">
-        <button type="button">Help</button>
       </form>`;
-    const form = document.querySelector('form')!;
-    form.querySelectorAll('input, button').forEach(makeVisible);
-    const help = vi.spyOn(form.querySelector('button')!, 'click');
+    const [user, password] = Array.from(document.querySelectorAll('input'));
+    makeVisible(user);
+    makeVisible(password);
+    const fillButton = createPageAutofill(document).offer([
+      { title: 'Example', username: 'alice', password: 'secret' },
+    ]);
 
-    createPageAutofill(document).tryFill({ username: 'alice', password: 'secret', autoLogin: true });
+    fillButton!.click();
 
-    expect(help).not.toHaveBeenCalled();
-    expect(form.querySelector('input[type="password"]')?.value).toBe('secret');
+    expect(user.value).toBe('');
+    expect(password.value).toBe('');
   });
 });
 
 function makeVisible(element: Element): void {
-  vi.spyOn(element, 'getClientRects').mockReturnValue([{} as DOMRect]);
+  vi.spyOn(element, 'getClientRects').mockReturnValue([{} as DOMRect] as unknown as DOMRectList);
 }

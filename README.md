@@ -13,7 +13,7 @@ KeePass-compatible password manager as a Chrome extension. Runs entirely in the 
 - **Favorites and recents** — mark important entries as favorites; keep the 20 most recently copied or filled entries at hand
 - **Search** — quick search by title, login, URL and tags within the selected entry view
 - **Password generator** — configurable generator with strength meter
-- **Click-to-fill** — fills a login form only after you click the KeePass control or choose an entry in the popup
+- **Click-to-fill** — fills a login form only after you click the on-page Fill control or choose an entry in the popup
 - **Save after sign-in or signup** — offers to add or update a vault record after a password form is submitted
 - **Light and dark appearance** — light is the default; switch modes from the header and choose a green, blue, purple, or pink accent
 - **Soft interface styling** — translucent one-pixel borders, subtle surfaces, and quiet entry-row hover effects
@@ -72,6 +72,9 @@ npm run dev
 # TypeScript type check
 npm run compile
 
+# Run unit tests
+npm test
+
 # Build for Firefox
 npm run build:firefox
 
@@ -97,6 +100,7 @@ With Remember Unlock enabled, the extension temporarily keeps your master passwo
 
 ### Password management
 
+- **Import logins from CSV** — use the import button in the unlocked vault header to import CSV exports from Chrome, Brave, Microsoft Edge, Bitwarden, LastPass, or another manager. Review and map columns, skip rows without passwords and duplicates by default, and undo the latest import while the popup remains open. CSV data is processed locally; non-login item types are not imported.
 - **Add entry** — "Add Entry" button at the bottom of the list
 - **View** — click an entry in the list
 - **Edit** — "Edit" button on the entry page
@@ -131,7 +135,7 @@ Available via the key icon in the header or when creating/editing an entry (refr
 When you visit a login page with a matching entry that has **Allow Auto Fill** enabled:
 
 1. The extension waits for a visible password field and finds entries matching the exact hostname. It does not put credentials into the page automatically.
-2. Click the **KeePass logo** beside the password field to fill the first match, or open the popup, choose the entry you want, and click **Fill**.
+2. Click the **Fill** control beside the password field to fill the first match, or open the popup, choose the entry you want, and click **Fill**.
 3. Filling never submits the login form; review the page and submit it yourself.
 
 Each entry has an **Allow Auto Fill** checkbox, enabled by default. Turn it off to exclude that entry from matching and fill suggestions. **Remember Unlock** is a separate opt-in on the unlock screen; its selected duration controls how long the master password remains available for automatic re-unlock.
@@ -142,7 +146,7 @@ You can also open the extension popup on a matching page and select an entry fro
 
 After you submit a password-based sign-in or signup form, KeePass offers to save the submitted username and password when the page navigates or the form disappears. If the site gives no clear signal, it shows an offer after five seconds and marks the result as unconfirmed. Password-change forms are ignored.
 
-Review the title, website, username, and password in the on-page prompt before choosing **Save**. New records go to the root group by default; you can select another group. A new record enables **Allow Auto Fill** and leaves **Auto Login** off. If the same exact hostname and username already exist, the prompt offers **Update**; it keeps other entry details unless you edit them in the prompt. **Never** dismisses only that offer.
+Review the title, website, username, and password in the on-page prompt before choosing **Save**. New records go to the root group by default; you can select another group. A new record enables **Allow Auto Fill**. If the same exact hostname and username already exist, the prompt offers **Update**; it keeps other entry details unless you edit them in the prompt. **Never** dismisses only that offer.
 
 The prompt is available only while the vault is unlocked. If the vault is locked or unavailable, pending credentials are discarded. Credentials are kept in memory briefly across a full-page navigation and are never sent to a remote service.
 
@@ -167,6 +171,7 @@ Use the Light/Dark control in the header to switch appearance; light is the defa
 │       └── components/        # PasswordInput, CopyButton, StrengthMeter
 ├── lib/
 │   ├── kdbx.ts                # kdbxweb wrapper — .kdbx database handling
+│   ├── credential-save.ts     # Sign-in/signup form classification
 │   ├── page-autofill.ts       # Fills a login form after an explicit user action
 │   ├── crypto-setup.ts        # Argon2 (hash-wasm) init for kdbxweb
 │   ├── storage.ts             # chrome.storage.local / session persistence
@@ -235,7 +240,7 @@ graph TB
 
 ### Message protocol
 
-Typed messages in `lib/messages.ts`: GET_STATE, CREATE_DATABASE, IMPORT_DATABASE, UNLOCK, LOCK, GET_ENTRIES, GET_ENTRY, CREATE_ENTRY, UPDATE_ENTRY, DELETE_ENTRY, GET_GROUPS, GENERATE_PASSWORD, COPY_TO_CLIPBOARD, EXPORT_DATABASE, GET_ENTRIES_FOR_URL, FILL_IN_TAB.
+Typed messages in `lib/messages.ts`: GET_STATE, CREATE_DATABASE, IMPORT_DATABASE, UNLOCK, LOCK, GET_ENTRIES, GET_ENTRY, CREATE_ENTRY, IMPORT_CSV_ENTRIES, UNDO_CSV_IMPORT, UPDATE_ENTRY, DELETE_ENTRY, GET_GROUPS, GENERATE_PASSWORD, COPY_TO_CLIPBOARD, EXPORT_DATABASE, GET_ENTRIES_FOR_URL, FILL_IN_TAB.
 
 ### Security
 

@@ -251,7 +251,6 @@ export function createEntry(
   entry.tags = data.tags || [];
   if (data.favorite) entry.fields.set(FAVORITE_FIELD, 'true');
   if (data.autoFill === false) entry.fields.set(AUTO_FILL_FIELD, 'false');
-  if (data.autoLogin) entry.fields.set(AUTO_LOGIN_FIELD, 'true');
 
   return kdbxEntryToData(entry);
 }
@@ -277,8 +276,8 @@ export function updateEntry(data: EntryData): EntryData | null {
       else entry.fields.delete(FAVORITE_FIELD);
       if (data.autoFill === false) entry.fields.set(AUTO_FILL_FIELD, 'false');
       else entry.fields.delete(AUTO_FILL_FIELD);
-      if (data.autoLogin) entry.fields.set(AUTO_LOGIN_FIELD, 'true');
-      else entry.fields.delete(AUTO_LOGIN_FIELD);
+      // Legacy Auto Login metadata is intentionally removed: filling never submits forms.
+      entry.fields.delete(AUTO_LOGIN_FIELD);
       entry.times.update();
 
       return kdbxEntryToData(entry);

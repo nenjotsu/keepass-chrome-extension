@@ -28,7 +28,6 @@ export function EntryForm({ entry, onSaved, onCancel, onSessionLost }: Props) {
   const [tags, setTags] = useState(entry?.tags.join(', ') ?? '');
   const [favorite, setFavorite] = useState(entry?.favorite ?? false);
   const [autoFill, setAutoFill] = useState(entry?.autoFill ?? true);
-  const [autoLogin, setAutoLogin] = useState(entry?.autoLogin ?? false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [restoredFromDraft, setRestoredFromDraft] = useState(false);
@@ -40,12 +39,11 @@ export function EntryForm({ entry, onSaved, onCancel, onSessionLost }: Props) {
       if (draft) {
         setTitle(draft.title);
         setUsername(draft.username);
-        setPassword(draft.password);
+        setPassword(draft.password || entry?.password || '');
         setUrl(draft.url);
         setNotes(draft.notes);
         setTags(draft.tags);
         setAutoFill(draft.autoFill);
-        setAutoLogin(draft.autoLogin);
         setRestoredFromDraft(true);
       } else {
         if (entry) {
@@ -57,14 +55,13 @@ export function EntryForm({ entry, onSaved, onCancel, onSessionLost }: Props) {
           setTags(entry.tags?.join(', ') ?? '');
           setFavorite(entry.favorite ?? false);
           setAutoFill(entry.autoFill ?? true);
-          setAutoLogin(entry.autoLogin ?? false);
         }
         setRestoredFromDraft(false);
       }
     });
   }, [entry?.id]);
 
-  const draft = { title, username, password, url, notes, tags, autoFill, autoLogin };
+  const draft = { title, username, password, url, notes, tags, autoFill };
   const entryId = entry?.id;
 
   // Unsaved changes detection (edit mode only)
@@ -76,20 +73,19 @@ export function EntryForm({ entry, onSaved, onCancel, onSessionLost }: Props) {
   const notesChanged = notes !== (entry?.notes ?? '');
   const tagsChanged = tags !== entryTagsStr;
   const autoFillChanged = autoFill !== (entry?.autoFill ?? true);
-  const autoLoginChanged = autoLogin !== (entry?.autoLogin ?? false);
   const hasUnsavedChanges =
-    isEditing && (titleChanged || usernameChanged || passwordChanged || urlChanged || notesChanged || tagsChanged || autoFillChanged || autoLoginChanged);
+    isEditing && (titleChanged || usernameChanged || passwordChanged || urlChanged || notesChanged || tagsChanged || autoFillChanged);
 
   // Save draft on change (debounced)
   useEffect(() => {
     const t = setTimeout(() => saveEntryFormDraft(draft, entryId), 300);
     return () => clearTimeout(t);
-  }, [title, username, password, url, notes, tags, autoFill, autoLogin, entryId]);
+  }, [title, username, password, url, notes, tags, autoFill, entryId]);
 
   // Save immediately on blur — before popup may close when user clicks away to copy
   const saveDraftNow = useCallback(() => {
     saveEntryFormDraft(draft, entryId);
-  }, [title, username, password, url, notes, tags, autoFill, autoLogin, entryId]);
+  }, [title, username, password, url, notes, tags, autoFill, entryId]);
 
   const handleGeneratePassword = async () => {
     const res = await sendMessage<GeneratePasswordResponse>({
@@ -129,7 +125,6 @@ export function EntryForm({ entry, onSaved, onCancel, onSessionLost }: Props) {
               tags: parsedTags,
               favorite,
               autoFill,
-              autoLogin,
             },
           },
         });
@@ -152,7 +147,6 @@ export function EntryForm({ entry, onSaved, onCancel, onSessionLost }: Props) {
               groupId: '',
               favorite,
               autoFill,
-              autoLogin,
             },
           },
         });
@@ -210,10 +204,6 @@ export function EntryForm({ entry, onSaved, onCancel, onSessionLost }: Props) {
         <label className="flex items-center gap-2 text-sm text-gray-700">
           <input type="checkbox" checked={autoFill} onChange={(e) => setAutoFill(e.target.checked)} className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" />
           Allow Auto Fill
-        </label>
-        <label className="flex items-center gap-2 text-sm text-gray-700">
-          <input type="checkbox" checked={autoLogin} onChange={(e) => setAutoLogin(e.target.checked)} disabled={!autoFill} className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" />
-          Auto Login after filling
         </label>
 
         <div>

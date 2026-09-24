@@ -6,7 +6,7 @@ import { isCredentialSaveForm } from '@/lib/credential-save';
 export default defineContentScript({
   matches: ['*://*/*'],
   main() {
-    let automaticFillDone = false;
+    let fillControlAdded = false;
     let credentialsRequestPending = false;
     const pageAutofill = createPageAutofill(document);
     // Detect login forms on the page
@@ -26,7 +26,7 @@ export default defineContentScript({
     window.addEventListener('focus', detectForms);
 
     function detectForms() {
-      if (automaticFillDone || credentialsRequestPending) return;
+      if (fillControlAdded || credentialsRequestPending) return;
       const passwordFields = document.querySelectorAll<HTMLInputElement>(
         'input[type="password"]',
       );
@@ -46,14 +46,10 @@ export default defineContentScript({
         })) as EntriesResponse;
 
         if ('data' in response && response.data.length > 0) {
-          const entry = response.data[0];
-          const filled = pageAutofill.tryFill(entry);
-          if (!filled) return;
-          automaticFillDone = true;
-
-          // Retain the explicit fill affordance for users who want another match.
-          addFillIndicator(filled.passwordField, filled.usernameField, response.data);
-          filled.passwordField.dataset.keepassIndicatorAttached = 'true';
+          const control = pageAutofill.offer(response.data, () => {
+            void browser.runtime.sendMessage({ type: 'SESSION_ACTIVITY' }).catch(() => {});
+          });
+          fillControlAdded = control !== null;
         }
       } catch {
         // Extension might not be unlocked — silently ignore
@@ -69,95 +65,6 @@ export default defineContentScript({
       return Array.from(candidates).find((input) =>
         !input.disabled && !input.readOnly && input.type !== 'hidden' && input.type !== 'password' && input.getClientRects().length > 0,
       ) ?? null;
-    }
-
-    function addFillIndicator(
-      passwordField: HTMLInputElement,
-      usernameField: HTMLInputElement | null,
-      entries: Extract<EntriesResponse, { success: true }>['data'],
-    ) {
-      // Add a small icon inside the password field to indicate autofill availability
-      const indicator = document.createElement('div');
-      indicator.style.cssText = `
-        position: absolute;
-        right: 8px;
-        top: 50%;
-        transform: translateY(-50%);
-        width: 24px;
-        height: 24px;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 10000;
-        padding: 2px;
-      `;
-
-      // KeePass app icon - green background with white lock
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('viewBox', '0 0 24 24');
-      svg.style.width = '100%';
-      svg.style.height = '100%';
-      svg.innerHTML = `
-        <!-- Green background -->
-        <rect x="0" y="0" width="24" height="24" rx="3" fill="#34A853"/>
-
-        <!-- White lock -->
-        <g fill="none" stroke="white" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
-          <!-- Lock shackle (top part) -->
-          <path d="M7 11V8C7 5.24 9.24 3 12 3C14.76 3 17 5.24 17 8V11"/>
-          <!-- Lock body -->
-          <rect x="5" y="11" width="14" height="9" rx="1"/>
-          <!-- Lock keyhole -->
-          <circle cx="12" cy="15.5" r="1.5" fill="white" stroke="none"/>
-        </g>
-      `;
-
-      indicator.appendChild(svg);
-      indicator.title = `KeePass: ${entries.length} credential(s) available`;
-
-      // Make the parent positioned so we can place the indicator
-      const parent = passwordField.parentElement;
-      if (parent) {
-        const parentPosition = window.getComputedStyle(parent).position;
-        if (parentPosition === 'static') {
-          parent.style.position = 'relative';
-        }
-        parent.appendChild(indicator);
-      }
-
-      // Click to fill
-      indicator.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-
-        // Count the explicit user fill as activity without letting passive
-        // form detection keep the vault unlocked.
-        void browser.runtime.sendMessage({ type: 'SESSION_ACTIVITY' }).catch(() => {});
-
-        const entry = entries[0];
-        if (usernameField) {
-          setNativeValue(usernameField, entry.username);
-        }
-        setNativeValue(passwordField, entry.password);
-      });
-    }
-
-    /** Set value on input in a way that triggers React/Vue/Angular change detection */
-    function setNativeValue(input: HTMLInputElement, value: string) {
-      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype,
-        'value',
-      )?.set;
-
-      if (nativeInputValueSetter) {
-        nativeInputValueSetter.call(input, value);
-      } else {
-        input.value = value;
-      }
-
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      input.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
     function installCredentialSavePrompt() {
@@ -310,7 +217,7 @@ export default defineContentScript({
           if (match) {
             await browser.runtime.sendMessage({ type: 'UPDATE_ENTRY_PASSWORD', payload: { id: match.id, title: fields.title.value.trim(), url: fields.url.value.trim(), username: fields.username.value.trim(), password: passwordInput.value } }).catch(() => null);
           } else {
-            await browser.runtime.sendMessage({ type: 'CREATE_ENTRY', payload: { entry: { title: fields.title.value.trim(), url: fields.url.value.trim(), username: fields.username.value.trim(), password: passwordInput.value, notes: '', tags: [], groupId: selectedGroup.value, autoFill: true, autoLogin: false } } }).catch(() => null);
+            await browser.runtime.sendMessage({ type: 'CREATE_ENTRY', payload: { entry: { title: fields.title.value.trim(), url: fields.url.value.trim(), username: fields.username.value.trim(), password: passwordInput.value, notes: '', tags: [], groupId: selectedGroup.value, autoFill: true } } }).catch(() => null);
           }
           passwordInput.value = '';
           host.remove();

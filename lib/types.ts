@@ -14,7 +14,7 @@ export interface EntryData {
   favorite?: boolean;
   /** Defaults to true for entries created before and after this setting was added. */
   autoFill?: boolean;
-  /** Defaults to false; when enabled, a clear login submit button is clicked after autofill. */
+  /** Legacy KeePass metadata. Automatic form submission is no longer supported. */
   autoLogin?: boolean;
 }
 

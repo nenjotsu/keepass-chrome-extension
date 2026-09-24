@@ -138,7 +138,7 @@ function DomainIcon({ url }: { url: string }) {
   const [failed, setFailed] = useState(false);
   if (!domain || failed) return <FallbackIcon />;
   const pageUrl = new URL(`https://${domain}`).toString();
-  const faviconUrl = new URL(browser.runtime.getURL('/_favicon/'));
+  const faviconUrl = new URL(browser.runtime.getURL('/_favicon/' as never));
   faviconUrl.searchParams.set('pageUrl', pageUrl);
   faviconUrl.searchParams.set('size', '32');
   return <img src={faviconUrl.toString()} onError={() => setFailed(true)} alt="" className="w-8 h-8 rounded-lg object-contain flex-shrink-0 bg-gray-100" />;

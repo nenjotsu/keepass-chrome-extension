@@ -415,6 +415,36 @@ export default defineBackground(() => {
           return { success: true, data: created } as EntryResponse;
         }
 
+        case 'IMPORT_CSV_ENTRIES': {
+          const guard = await requireUnlocked();
+          if (guard) return guard;
+          const op = await stateJournal.beginOperation('import_csv_entries', { count: msg.payload.entries.length });
+          try {
+            const created = msg.payload.entries.map((entry) => kdbx.createEntry(entry));
+            await persistDatabase();
+            await stateJournal.completeOperation(op, '');
+            return { success: true, data: created };
+          } catch (err) {
+            await stateJournal.rollbackOperation(op, String(err));
+            throw err;
+          }
+        }
+
+        case 'UNDO_CSV_IMPORT': {
+          const guard = await requireUnlocked();
+          if (guard) return guard;
+          const op = await stateJournal.beginOperation('undo_csv_import', { count: msg.payload.ids.length });
+          try {
+            for (const id of msg.payload.ids) kdbx.deleteEntry(id);
+            await persistDatabase();
+            await stateJournal.completeOperation(op, '');
+            return { success: true, data: null };
+          } catch (err) {
+            await stateJournal.rollbackOperation(op, String(err));
+            throw err;
+          }
+        }
+
         case 'UPDATE_ENTRY': {
           const guard = await requireUnlocked();
           if (guard) return guard;

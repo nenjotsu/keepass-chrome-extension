@@ -1,7 +1,7 @@
 export interface PageCredentials {
+  title: string;
   username: string;
   password: string;
-  autoLogin?: boolean;
 }
 
 export interface FilledLoginForm {
@@ -9,32 +9,65 @@ export interface FilledLoginForm {
   passwordField: HTMLInputElement;
 }
 
-/** Create a one-page autofill action that fills the first visible login form at most once. */
-export function createPageAutofill(root: ParentNode) {
+/** Offer a user-clicked Fill action for the first visible login form on the page. */
+export function createPageAutofill(
+  root: ParentNode,
+  isTrustedClick: (event: MouseEvent) => boolean = (event) => event.isTrusted,
+) {
   let completed = false;
+  let offered = false;
+
+  function tryFill(credentials: PageCredentials): FilledLoginForm | null {
+    if (completed) return null;
+
+    const passwordField = Array.from(
+      root.querySelectorAll<HTMLInputElement>('input[type="password"]'),
+    ).find(isVisibleAndEditable);
+    if (!passwordField) return null;
+
+    const form = passwordField.closest('form');
+    const usernameRoot: ParentNode = form ?? root;
+    const usernameField = findUsernameField(usernameRoot);
+
+    if (usernameField) setNativeValue(usernameField, credentials.username);
+    setNativeValue(passwordField, credentials.password);
+    completed = true;
+
+    return { usernameField, passwordField };
+  }
 
   return {
-    tryFill(credentials: PageCredentials): FilledLoginForm | null {
-      if (completed) return null;
-
+    /** Add a control without exposing credentials in page fields before a click. */
+    offer(entries: PageCredentials[], onFilled?: () => void): HTMLButtonElement | null {
+      if (offered || entries.length === 0) return null;
       const passwordField = Array.from(
         root.querySelectorAll<HTMLInputElement>('input[type="password"]'),
       ).find(isVisibleAndEditable);
-      if (!passwordField) return null;
+      const parent = passwordField?.parentElement;
+      if (!passwordField || !parent) return null;
 
-      const form = passwordField.closest('form');
-      const usernameRoot: ParentNode = form ?? root;
-      const usernameField = findUsernameField(usernameRoot);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = 'Fill';
+      button.title = `Fill ${entries[0].title || 'saved credentials'}`;
+      button.setAttribute('aria-label', button.title);
+      button.style.cssText = 'position:absolute;right:8px;top:50%;transform:translateY(-50%);z-index:10000;padding:4px 8px;border:0;border-radius:6px;background:#15803d;color:white;font:12px sans-serif;cursor:pointer;';
 
-      if (usernameField) setNativeValue(usernameField, credentials.username);
-      setNativeValue(passwordField, credentials.password);
-      completed = true;
-
-      if (credentials.autoLogin && form) {
-        findClearSubmitButton(form)?.click();
+      if (window.getComputedStyle(parent).position === 'static') {
+        parent.style.position = 'relative';
       }
+      parent.appendChild(button);
+      offered = true;
 
-      return { usernameField, passwordField };
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!isTrustedClick(event)) return;
+        if (!tryFill(entries[0])) return;
+        onFilled?.();
+      });
+
+      return button;
     },
   };
 }
@@ -51,17 +84,6 @@ function findUsernameField(root: ParentNode): HTMLInputElement | null {
     const type = input.type.toLowerCase();
     return !input.disabled && !input.readOnly && type !== 'hidden' && type !== 'password' && input.getClientRects().length > 0;
   }) ?? null;
-}
-
-function findClearSubmitButton(form: HTMLFormElement): HTMLElement | null {
-  const explicitSubmit = Array.from(form.querySelectorAll<HTMLElement>(
-    'button[type="submit"], input[type="submit"]',
-  )).find((button) => !('disabled' in button && button.disabled) && button.getClientRects().length > 0);
-  if (explicitSubmit) return explicitSubmit;
-
-  return Array.from(form.querySelectorAll<HTMLButtonElement>('button'))
-    .find((button) => /^(log\s*in|sign\s*in|login|continue)$/i.test((button.innerText || button.getAttribute('aria-label') || '').trim())
-      && !button.disabled && button.getClientRects().length > 0) ?? null;
 }
 
 function setNativeValue(input: HTMLInputElement, value: string): void {

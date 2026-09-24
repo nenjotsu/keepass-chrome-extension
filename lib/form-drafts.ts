@@ -28,11 +28,17 @@ export async function loadCreateVaultDraft(): Promise<CreateVaultDraft | null> {
     const r = await browser.storage.session.get(KEY_CREATE_VAULT);
     const d = r[KEY_CREATE_VAULT] as Record<string, unknown> | undefined;
     if (!d || typeof d !== 'object') return null;
-    return {
+    const safeDraft = {
       name: String(d.name ?? ''),
-      password: String(d.password ?? ''),
-      confirmPassword: String(d.confirmPassword ?? ''),
-      mode: d.mode === 'import' ? 'import' : 'create',
+      mode: d.mode === 'import' ? 'import' as const : 'create' as const,
+    };
+    if ('password' in d || 'confirmPassword' in d) {
+      await browser.storage.session.set({ [KEY_CREATE_VAULT]: safeDraft });
+    }
+    return {
+      ...safeDraft,
+      password: '',
+      confirmPassword: '',
     };
   } catch {
     return null;
@@ -41,7 +47,8 @@ export async function loadCreateVaultDraft(): Promise<CreateVaultDraft | null> {
 
 export async function saveCreateVaultDraft(draft: CreateVaultDraft): Promise<void> {
   try {
-    await browser.storage.session.set({ [KEY_CREATE_VAULT]: draft });
+    const { name, mode } = draft;
+    await browser.storage.session.set({ [KEY_CREATE_VAULT]: { name, mode } });
   } catch {
     // ignore
   }
@@ -97,7 +104,6 @@ export interface EntryFormDraft {
   notes: string;
   tags: string;
   autoFill: boolean;
-  autoLogin: boolean;
 }
 
 function entryFormKey(entryId?: string): string {
@@ -110,16 +116,18 @@ export async function loadEntryFormDraft(entryId?: string): Promise<EntryFormDra
     const r = await browser.storage.session.get(key);
     const d = r[key] as Record<string, unknown> | undefined;
     if (!d || typeof d !== 'object') return null;
-    return {
+    const safeDraft = {
       title: String(d.title ?? ''),
       username: String(d.username ?? ''),
-      password: String(d.password ?? ''),
       url: String(d.url ?? ''),
       notes: String(d.notes ?? ''),
       tags: String(d.tags ?? ''),
       autoFill: d.autoFill !== false,
-      autoLogin: d.autoLogin === true,
     };
+    if ('password' in d || 'autoLogin' in d) {
+      await browser.storage.session.set({ [key]: safeDraft });
+    }
+    return { ...safeDraft, password: '' };
   } catch {
     return null;
   }
@@ -130,7 +138,15 @@ export async function saveEntryFormDraft(
   entryId?: string,
 ): Promise<void> {
   try {
-    await browser.storage.session.set({ [entryFormKey(entryId)]: draft });
+    const safeDraft = {
+      title: draft.title,
+      username: draft.username,
+      url: draft.url,
+      notes: draft.notes,
+      tags: draft.tags,
+      autoFill: draft.autoFill,
+    };
+    await browser.storage.session.set({ [entryFormKey(entryId)]: safeDraft });
   } catch {
     // ignore
   }

@@ -48,7 +48,7 @@ describe('autofill entry settings', () => {
     expect(getEntriesForUrl('https://sub.example.com/login')).toEqual([]);
   });
 
-  it('persists Auto Login when an entry is edited', () => {
+  it('removes legacy Auto Login metadata when an entry is edited', () => {
     const entry = createEntry({
       title: 'Example',
       username: 'alice',
@@ -59,7 +59,7 @@ describe('autofill entry settings', () => {
       groupId: '',
     });
 
-    expect(updateEntry({ ...entry, autoLogin: true })).toMatchObject({ autoLogin: true });
-    expect(getEntriesForUrl('https://example.com')[0].autoLogin).toBe(true);
+    expect(updateEntry({ ...entry, autoLogin: true })).toMatchObject({ autoLogin: false });
+    expect(getEntriesForUrl('https://example.com')[0].autoLogin).toBe(false);
   });
 });

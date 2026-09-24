@@ -9,6 +9,7 @@ import { EntryForm } from './pages/EntryForm';
 import { EntryDetail } from './pages/EntryDetail';
 import { Generator } from './pages/Generator';
 import { PasswordInput } from './components/PasswordInput';
+import { CsvImport } from './pages/CsvImport';
 
 type Page =
   | { name: 'loading' }
@@ -17,7 +18,8 @@ type Page =
   | { name: 'entry_list' }
   | { name: 'entry_detail'; entry: EntryData }
   | { name: 'entry_form'; entry?: EntryData }
-  | { name: 'generator' };
+  | { name: 'generator' }
+  | { name: 'csv_import' };
 
 type ThemeName = 'green' | 'blue' | 'purple' | 'pink';
 type ThemeMode = 'light' | 'dark';
@@ -30,7 +32,7 @@ const themes: Array<{ id: ThemeName; label: string; color: string }> = [
 
 function isPage(value: unknown): value is Page {
   if (!value || typeof value !== 'object' || !('name' in value)) return false;
-  return ['create_vault', 'unlock', 'entry_list', 'entry_detail', 'entry_form', 'generator'].includes(
+  return ['create_vault', 'unlock', 'entry_list', 'entry_detail', 'entry_form', 'generator', 'csv_import'].includes(
     (value as { name: unknown }).name as string,
   );
 }
@@ -150,6 +152,11 @@ function App() {
     }
   };
 
+  const handleImportComplete = async () => {
+    const res = await sendMessage<StateResponse>({ type: 'GET_STATE' });
+    if (res.success) setAppState(res.data);
+  };
+
   const handleDeleteDatabase = async () => {
     if (!deletePassword) {
       setDeleteError('Enter your master password');
@@ -255,6 +262,16 @@ function App() {
               </button>
             )}
             <button
+              onClick={() => setPage({ name: 'csv_import' })}
+              className="hover:bg-emerald-700 rounded p-1.5 transition-colors"
+              title="Import CSV"
+              aria-label="Import CSV"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 16V4m0 0L8 8m4-4l4 4M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3" />
+              </svg>
+            </button>
+            <button
               onClick={() => setPage({ name: 'generator' })}
               className="hover:bg-emerald-700 rounded p-1.5 transition-colors"
               title="Password Generator"
@@ -347,6 +364,8 @@ function App() {
         );
       case 'generator':
         return <Generator />;
+      case 'csv_import':
+        return <CsvImport onSessionLost={handleSessionLost} onImported={() => void handleImportComplete()} />;
     }
   };
 
