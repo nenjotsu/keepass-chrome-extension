@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { AppState, EntryData } from '@/lib/types';
 import type { StateResponse, MessageResponse, ExportResponse } from '@/lib/messages';
 import { sendMessage, isNotUnlockedError } from '@/lib/messages';
@@ -47,6 +47,24 @@ function App() {
   const [theme, setTheme] = useState<ThemeName>('green');
   const [themeReady, setThemeReady] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>('light');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (event.target instanceof Node && !menuRef.current?.contains(event.target)) setMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [menuOpen]);
 
   useEffect(() => {
     void browser.storage.local.get(['uiTheme', 'uiAppearance']).then((stored) => {
@@ -261,52 +279,33 @@ function App() {
                 </svg>
               </button>
             )}
-            <button
-              onClick={() => setPage({ name: 'csv_import' })}
-              className="hover:bg-emerald-700 rounded p-1.5 transition-colors"
-              title="Import CSV"
-              aria-label="Import CSV"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 16V4m0 0L8 8m4-4l4 4M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3" />
-              </svg>
-            </button>
-            <button
-              onClick={() => setPage({ name: 'generator' })}
-              className="hover:bg-emerald-700 rounded p-1.5 transition-colors"
-              title="Password Generator"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-              </svg>
-            </button>
-            <button
-              onClick={handleExportDatabase}
-              className="hover:bg-emerald-700 rounded p-1.5 transition-colors"
-              title="Export Database"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-            </button>
-            <button
-              onClick={handleLock}
-              className="hover:bg-emerald-700 rounded p-1.5 transition-colors"
-              title="Lock Database"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-              </svg>
-            </button>
-            <button
-              onClick={() => setShowDeleteConfirm(true)}
-              className="hover:bg-red-600 rounded p-1.5 transition-colors"
-              title="Delete Database"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </button>
+            <div className="relative" ref={menuRef}>
+              <button
+                type="button"
+                onClick={() => setMenuOpen((open) => !open)}
+                className="hover:bg-emerald-700 rounded p-1.5 transition-colors"
+                aria-label="Open menu"
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                title="More actions"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="5" cy="12" r="1" strokeWidth={2} />
+                  <circle cx="12" cy="12" r="1" strokeWidth={2} />
+                  <circle cx="19" cy="12" r="1" strokeWidth={2} />
+                </svg>
+              </button>
+              {menuOpen && (
+                <div role="menu" aria-label="Database actions" className="absolute right-0 top-full z-40 mt-2 w-52 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 text-gray-800 shadow-xl">
+                  <button role="menuitem" onClick={() => { setMenuOpen(false); setPage({ name: 'csv_import' }); }} className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100">Import CSV</button>
+                  <button role="menuitem" onClick={() => { setMenuOpen(false); setPage({ name: 'generator' }); }} className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100">Password Generator</button>
+                  <button role="menuitem" onClick={() => { setMenuOpen(false); void handleExportDatabase(); }} className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100">Export Database</button>
+                  <div role="separator" className="my-1 border-t border-gray-100" />
+                  <button role="menuitem" onClick={() => { setMenuOpen(false); void handleLock(); }} className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100">Lock Database</button>
+                  <button role="menuitem" onClick={() => { setMenuOpen(false); setShowDeleteConfirm(true); }} className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50">Delete Database</button>
+                </div>
+              )}
+            </div>
           </>
         )}
       </div>
