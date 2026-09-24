@@ -94,7 +94,7 @@ export function EntryList({ onSelect, onEdit, onAdd, onSessionLost }: Props) {
     <div className="flex-1 overflow-y-auto">
       {loading ? <div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-600" /></div>
         : displayedEntries.length === 0 ? <div className="text-center py-12 px-4"><p className="text-gray-500 text-sm">{emptyMessage}</p>{activeTab === 'all' && !search && <p className="text-gray-400 text-xs mt-1">Click + to add your first entry</p>}</div>
-          : <div className="divide-y divide-gray-100">{displayedEntries.map((entry) => {
+          : <div className="divide-y divide-gray-600">{displayedEntries.map((entry) => {
             const canFill = activeTab === 'relevant' && entry.autoFill !== false;
             const canEdit = activeTab === 'relevant' || activeTab === 'all';
             const item = <>

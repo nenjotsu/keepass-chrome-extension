@@ -261,7 +261,7 @@ function App() {
         <h1 className="text-base font-semibold">KeePass</h1>
       </div>
       <div className="flex items-center gap-1">
-        <button type="button" onClick={() => setThemeMode((mode) => mode === 'light' ? 'dark' : 'light')} className="rounded-md border border-white/20 px-2 py-1 text-xs" aria-label={`Switch to ${themeMode === 'light' ? 'dark' : 'light'} theme`} title={`Switch to ${themeMode === 'light' ? 'dark' : 'light'} theme`}>{themeMode === 'light' ? 'Light' : 'Dark'}</button>
+        <button type="button" onClick={() => setThemeMode((mode) => mode === 'light' ? 'dark' : 'light')} className="theme-mode-toggle" aria-pressed={themeMode === 'dark'} aria-label={`Switch to ${themeMode === 'light' ? 'dark' : 'light'} theme`} title={`Switch to ${themeMode === 'light' ? 'dark' : 'light'} theme`}>{themeMode === 'light' ? 'Light' : 'Dark'}</button>
         <div className="flex items-center gap-1 rounded-full bg-black/10 px-1.5 py-1" role="group" aria-label="Theme accent color">
           {themes.map((option) => <button key={option.id} type="button" onClick={() => setTheme(option.id)} aria-label={`${option.label} theme`} aria-pressed={theme === option.id} title={option.label} className={`h-3.5 w-3.5 rounded-full transition-transform hover:scale-125 ${theme === option.id ? 'ring-2 ring-white ring-offset-1 ring-offset-transparent' : ''}`} style={{ backgroundColor: option.color }} />)}
         </div>

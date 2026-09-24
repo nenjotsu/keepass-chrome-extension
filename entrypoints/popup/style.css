@@ -59,6 +59,35 @@ body {
   border-bottom-color: rgba(203, 213, 225, .15);
 }
 .theme-shell[data-appearance='dark'] .theme-header.text-white { color: #edf2f7; }
+.theme-mode-toggle {
+  display: inline-flex;
+  min-width: 42px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid;
+  border-radius: 5px;
+  padding: 0 7px;
+  font-size: 12px;
+  line-height: 1;
+  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease;
+  color: #25352c;
+  border-color: rgba(37, 53, 44, .24);
+  background-color: rgba(255, 255, 255, .3);
+}
+.theme-mode-toggle:hover { background-color: rgba(255, 255, 255, .58); }
+.theme-mode-toggle:focus-visible { outline: 2px solid var(--theme-accent-deep); outline-offset: 2px; }
+.theme-shell[data-appearance='dark'] .theme-mode-toggle {
+  color: #f4f7fb;
+  border-color: rgba(226, 232, 240, .48);
+  background-color: rgba(15, 23, 34, .3);
+}
+.theme-shell[data-appearance='dark'] .theme-mode-toggle:hover {
+  color: #fff;
+  border-color: rgba(226, 232, 240, .82);
+  background-color: rgba(15, 23, 34, .58);
+}
+.theme-shell[data-appearance='dark'] .theme-mode-toggle:focus-visible { outline-color: var(--theme-accent); }
 
 .theme-content { background: rgba(255,255,255,.14); }
 .theme-shell[data-appearance='dark'] .theme-content { background: rgba(255,255,255,.015); }
@@ -84,6 +113,9 @@ body {
 .theme-shell .border-gray-100,
 .theme-shell .border-gray-200,
 .theme-shell .border-gray-300 { border-color: var(--line); }
+.theme-shell[data-appearance='dark'] .divide-y > :not([hidden]) ~ :not([hidden]) {
+  border-top-color: color-mix(in srgb, var(--line) 50%, transparent);
+}
 .theme-shell [class*='border-2'] { border-width: 1px; }
 .theme-shell input:not([type='checkbox']),
 .theme-shell textarea,
@@ -104,5 +136,60 @@ body {
 .theme-shell .border-emerald-600 { border-color: color-mix(in srgb, var(--theme-accent) 45%, transparent); }
 .theme-shell .bg-emerald-600.text-white { color: #fff; }
 .theme-shell[data-appearance='dark'] .bg-emerald-600.text-white { color: #18212b; }
+.generator-switch { position: relative; display: inline-flex; width: 34px; height: 18px; flex: none; }
+.generator-switch-input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.generator-switch-track {
+  position: relative;
+  display: block;
+  width: 34px;
+  height: 18px;
+  border-radius: 9999px;
+  background: #c4cdca;
+  transition: background-color 160ms ease, box-shadow 160ms ease;
+  cursor: pointer;
+}
+.generator-switch-track::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .24);
+  content: '';
+  transition: transform 160ms ease;
+}
+.generator-switch-input:checked + .generator-switch-track { background: #4b9b7d; }
+.generator-switch-input:checked + .generator-switch-track::after { transform: translateX(16px); }
+.generator-switch-input:focus-visible + .generator-switch-track { outline: 2px solid var(--theme-accent-deep); outline-offset: 2px; }
+.theme-shell[data-appearance='dark'] .generator-switch-track { background: #465258; }
+.theme-shell[data-appearance='dark'] .generator-switch-input:checked + .generator-switch-track {
+  background: color-mix(in srgb, var(--theme-accent) 68%, #317b60);
+}
 .theme-shell .entry-row { transition: background-color 180ms ease; }
 .theme-shell .entry-row:hover { background-color: color-mix(in srgb, var(--theme-accent) 8%, var(--surface)); }
+
+/* Keep utility-class hover states readable against dark surfaces. */
+.theme-shell[data-appearance='dark'] .hover\:bg-gray-50:hover,
+.theme-shell[data-appearance='dark'] .hover\:bg-gray-100:hover,
+.theme-shell[data-appearance='dark'] .hover\:bg-gray-200:hover,
+.theme-shell[data-appearance='dark'] .hover\:bg-gray-300:hover {
+  background-color: color-mix(in srgb, var(--surface-soft) 220%, #111923) !important;
+}
+.theme-shell[data-appearance='dark'] .hover\:bg-red-50:hover {
+  background-color: rgba(127, 29, 29, .38) !important;
+}
+.theme-shell[data-appearance='dark'] .hover\:bg-amber-200:hover {
+  background-color: rgba(120, 83, 15, .5) !important;
+}
+.theme-shell[data-appearance='dark'] .hover\:text-gray-600:hover,
+.theme-shell[data-appearance='dark'] .hover\:text-gray-800:hover {
+  color: var(--foreground) !important;
+}
+.theme-shell[data-appearance='dark'] .hover\:text-emerald-800:hover {
+  color: var(--theme-accent) !important;
+}
+.theme-shell[data-appearance='dark'] .hover\:bg-red-50:hover.text-red-600 {
+  color: #fca5a5;
+}
