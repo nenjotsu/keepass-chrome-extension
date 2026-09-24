@@ -10,6 +10,7 @@ import { EntryDetail } from './pages/EntryDetail';
 import { Generator } from './pages/Generator';
 import { PasswordInput } from './components/PasswordInput';
 import { CsvImport } from './pages/CsvImport';
+import { PasswordAudit } from './pages/PasswordAudit';
 
 type Page =
   | { name: 'loading' }
@@ -19,7 +20,8 @@ type Page =
   | { name: 'entry_detail'; entry: EntryData }
   | { name: 'entry_form'; entry?: EntryData }
   | { name: 'generator' }
-  | { name: 'csv_import' };
+  | { name: 'csv_import' }
+  | { name: 'password_audit'; kind: 'breached' | 'weak' };
 
 type ThemeName = 'green' | 'blue' | 'purple' | 'pink';
 type ThemeMode = 'light' | 'dark';
@@ -48,6 +50,7 @@ function App() {
   const [themeReady, setThemeReady] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>('light');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showBreachConsent, setShowBreachConsent] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -175,6 +178,24 @@ function App() {
     if (res.success) setAppState(res.data);
   };
 
+  const startAudit = async (kind: 'breached' | 'weak') => {
+    setMenuOpen(false);
+    if (kind === 'breached') {
+      const { hibpConsentAccepted } = await browser.storage.local.get('hibpConsentAccepted');
+      if (hibpConsentAccepted !== true) {
+        setShowBreachConsent(true);
+        return;
+      }
+    }
+    setPage({ name: 'password_audit', kind });
+  };
+
+  const acceptBreachConsent = async () => {
+    await browser.storage.local.set({ hibpConsentAccepted: true });
+    setShowBreachConsent(false);
+    setPage({ name: 'password_audit', kind: 'breached' });
+  };
+
   const handleDeleteDatabase = async () => {
     if (!deletePassword) {
       setDeleteError('Enter your master password');
@@ -298,6 +319,8 @@ function App() {
               {menuOpen && (
                 <div role="menu" aria-label="Database actions" className="absolute right-0 top-full z-40 mt-2 w-52 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 text-gray-800 shadow-xl">
                   <button role="menuitem" onClick={() => { setMenuOpen(false); setPage({ name: 'csv_import' }); }} className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100">Import CSV</button>
+                  <button role="menuitem" onClick={() => void startAudit('breached')} className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100">Check leaked passwords</button>
+                  <button role="menuitem" onClick={() => void startAudit('weak')} className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100">Check weak passwords</button>
                   <button role="menuitem" onClick={() => { setMenuOpen(false); setPage({ name: 'generator' }); }} className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100">Password Generator</button>
                   <button role="menuitem" onClick={() => { setMenuOpen(false); void handleExportDatabase(); }} className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100">Export Database</button>
                   <div role="separator" className="my-1 border-t border-gray-100" />
@@ -332,6 +355,7 @@ function App() {
       case 'entry_list':
         return (
           <EntryList
+            themeMode={themeMode}
             onSelect={(entry) => setPage({ name: 'entry_detail', entry })}
             onEdit={(entry) => setPage({ name: 'entry_form', entry })}
             onAdd={() => setPage({ name: 'entry_form' })}
@@ -365,6 +389,12 @@ function App() {
         return <Generator />;
       case 'csv_import':
         return <CsvImport onSessionLost={handleSessionLost} onImported={() => void handleImportComplete()} />;
+      case 'password_audit':
+        return <PasswordAudit
+          kind={page.kind}
+          onEdit={(entry) => setPage({ name: 'entry_form', entry })}
+          onSessionLost={handleSessionLost}
+        />;
     }
   };
 
@@ -408,6 +438,19 @@ function App() {
               >
                 {deletingDatabase ? 'Deleting...' : 'Delete'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBreachConsent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="breach-consent-title" className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
+            <h3 id="breach-consent-title" className="mb-2 text-lg font-semibold text-gray-900">Check passwords against known breaches?</h3>
+            <p className="text-sm text-gray-600">For each distinct saved password, this check sends the first five characters of its SHA-1 hash to Have I Been Pwned. The password and full hash stay on your device; the returned data is compared locally. HIBP receives these partial-hash requests.</p>
+            <div className="mt-4 flex gap-2">
+              <button onClick={() => setShowBreachConsent(false)} className="flex-1 rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200">Cancel</button>
+              <button onClick={() => void acceptBreachConsent()} className="flex-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Continue</button>
             </div>
           </div>
         </div>

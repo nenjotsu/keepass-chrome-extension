@@ -10,6 +10,8 @@ export type MessageRequest =
   | { type: 'LOCK' }
   | { type: 'SESSION_ACTIVITY' }
   | { type: 'GET_ENTRIES'; payload?: { groupId?: string; search?: string } }
+  | { type: 'GET_BREACHED_ENTRY_IDS' }
+  | { type: 'SAVE_BREACH_RESULTS'; payload: { results: Array<{ id: string; modified: string; breached: boolean }> } }
   | { type: 'GET_RECENT_ENTRY_IDS' }
   | { type: 'GET_ENTRY'; payload: { id: string } }
   | { type: 'CREATE_ENTRY'; payload: { entry: Omit<EntryData, 'id' | 'created' | 'modified'> } }
@@ -18,6 +20,10 @@ export type MessageRequest =
   | { type: 'UPDATE_ENTRY'; payload: { entry: EntryData } }
   | { type: 'DELETE_ENTRY'; payload: { id: string; password: string } }
   | { type: 'GET_GROUPS' }
+  | { type: 'CREATE_GROUP'; payload: { name: string } }
+  | { type: 'RENAME_GROUP'; payload: { id: string; name: string } }
+  | { type: 'DELETE_GROUP'; payload: { id: string } }
+  | { type: 'MOVE_ENTRIES'; payload: { ids: string[]; groupId: string } }
   | { type: 'GENERATE_PASSWORD'; payload?: Partial<GeneratorOptions> }
   | { type: 'COPY_TO_CLIPBOARD'; payload: { text: string; entryId?: string } }
   | { type: 'EXPORT_DATABASE' }

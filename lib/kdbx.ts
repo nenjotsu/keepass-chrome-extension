@@ -106,6 +106,49 @@ export function getGroups(): GroupData[] {
   return result;
 }
 
+export function createGroup(name: string): GroupData {
+  const db = getDb();
+  const normalized = name.trim();
+  if (!normalized) throw new Error('Folder name is required');
+  if (getGroups().some((group) => group.name.toLocaleLowerCase() === normalized.toLocaleLowerCase())) throw new Error('A folder with that name already exists');
+  const group = db.createGroup(db.getDefaultGroup(), normalized);
+  return { id: group.uuid.toString(), name: group.name || normalized, parentId: group.parentGroup?.uuid.toString() ?? null, icon: group.icon ?? 48 };
+}
+
+export function renameGroup(id: string, name: string): boolean {
+  const db = getDb();
+  const group = db.getGroup(id);
+  const normalized = name.trim();
+  if (!group || group === db.getDefaultGroup() || !normalized) return false;
+  if (getGroups().some((candidate) => candidate.id !== id && candidate.name.toLocaleLowerCase() === normalized.toLocaleLowerCase())) throw new Error('A folder with that name already exists');
+  group.name = normalized;
+  group.times.update();
+  return true;
+}
+
+export function deleteGroup(id: string): boolean {
+  const db = getDb();
+  const group = db.getGroup(id);
+  if (!group || group === db.getDefaultGroup() || !group.parentGroup) return false;
+  const parent = group.parentGroup;
+  for (const entry of [...group.entries]) db.move(entry, db.getDefaultGroup());
+  for (const child of [...group.groups]) db.move(child, parent);
+  db.remove(group);
+  return true;
+}
+
+export function moveEntries(ids: string[], groupId: string): number {
+  const db = getDb();
+  const target = groupId ? db.getGroup(groupId) : db.getDefaultGroup();
+  if (!target) throw new Error('Folder not found');
+  const wanted = new Set(ids);
+  let moved = 0;
+  for (const entry of [...db.getDefaultGroup().allEntries()]) {
+    if (wanted.has(entry.uuid.toString())) { db.move(entry, target); moved++; }
+  }
+  return moved;
+}
+
 // ── Entries ─────────────────────────────────────────────────────
 
 /** Safely convert a kdbxweb time value to ISO string */
@@ -278,6 +321,8 @@ export function updateEntry(data: EntryData): EntryData | null {
       else entry.fields.delete(AUTO_FILL_FIELD);
       // Legacy Auto Login metadata is intentionally removed: filling never submits forms.
       entry.fields.delete(AUTO_LOGIN_FIELD);
+      const targetGroup = data.groupId ? db.getGroup(data.groupId) : db.getDefaultGroup();
+      if (targetGroup && entry.parentGroup !== targetGroup) db.move(entry, targetGroup);
       entry.times.update();
 
       return kdbxEntryToData(entry);

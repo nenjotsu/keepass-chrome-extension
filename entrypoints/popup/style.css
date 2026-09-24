@@ -20,9 +20,10 @@ body {
   --foreground: #1f2937;
   --muted: #64748b;
   color: var(--foreground);
-  background:
-    radial-gradient(ellipse at 15% 0%, var(--theme-glow), transparent 42%),
-    linear-gradient(145deg, #f9fbfa 0%, #f1f5f3 56%, #f8faf9 100%);
+  background-color: #f1f5f3;
+  background-image:
+    radial-gradient(circle at 15% 0%, var(--theme-glow), transparent 42%),
+    radial-gradient(circle at 100% 100%, color-mix(in srgb, var(--theme-accent) 8%, transparent), transparent 45%);
 }
 
 .theme-shell[data-theme='blue'] { --theme-accent: #3977a7; --theme-accent-deep: #2d648e; --theme-glow: rgba(169, 201, 232, .22); }
@@ -36,9 +37,10 @@ body {
   --foreground: #e7edf4;
   --muted: #aab6c5;
   color-scheme: dark;
-  background:
-    radial-gradient(ellipse at 15% 0%, var(--theme-glow), transparent 42%),
-    linear-gradient(145deg, #111923 0%, #17212d 52%, #111923 100%);
+  background-color: #111923;
+  background-image:
+    radial-gradient(circle at 15% 0%, var(--theme-glow), transparent 42%),
+    radial-gradient(circle at 100% 100%, color-mix(in srgb, var(--theme-accent) 12%, transparent), transparent 48%);
 }
 .theme-shell[data-appearance='dark'][data-theme='green'] { --theme-accent: #a7d7bd; --theme-accent-deep: #83c5a2; }
 .theme-shell[data-appearance='dark'][data-theme='blue'] { --theme-accent: #a9c9e8; --theme-accent-deep: #85b4df; }

@@ -50,7 +50,7 @@ Chrome Web Store требует скриншоты размерами **1280×80
 | Поле | Значение |
 |------|----------|
 | **Name** | KeePass Password Manager |
-| **Short Description** | Secure KeePass-compatible password manager. All data encrypted locally—nothing leaves your browser. |
+| **Short Description** | Secure KeePass-compatible password manager with local encryption and optional privacy-preserving breach checks. |
 | **Detailed Description** | Смотри ниже |
 | **Language** | English |
 | **Category** | Productivity |
@@ -82,12 +82,12 @@ SECURITY:
 ✓ No plaintext passwords stored
 ✓ No remote backups or cloud sync
 ✓ No analytics or tracking
-✓ No permissions for external communication
+✓ Optional leaked-password checks send only partial password hashes to Have I Been Pwned after user confirmation
 
 PRIVACY:
-This extension is completely offline. Your passwords never leave your device.
-- No servers accessed
-- No data collection
+Vault data remains encrypted locally. Only when you choose the leaked-password check, the first five characters of each distinct password's SHA-1 hash are sent to Have I Been Pwned; the password and full hash stay on your device.
+- No developer-operated servers are accessed
+- No personal data collected by the extension developer
 - No advertising
 - Open source code available on GitHub
 

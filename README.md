@@ -2,7 +2,7 @@
 
 [Русский](README.ru.md) | **English**
 
-KeePass-compatible password manager as a Chrome extension. Runs entirely in the browser — all data is encrypted locally and never sent anywhere.
+KeePass-compatible password manager as a Chrome extension. Vault data is encrypted and stored locally. Optional leaked-password checks send partial password hashes to Have I Been Pwned after your confirmation.
 
 ## Features
 
@@ -13,6 +13,7 @@ KeePass-compatible password manager as a Chrome extension. Runs entirely in the 
 - **Favorites and recents** — mark important entries as favorites; keep the 20 most recently copied or filled entries at hand
 - **Search** — quick search by title, login, URL and tags within the selected entry view
 - **Password generator** — configurable generator with strength meter
+- **Password health checks** — find weak passwords locally and optionally check for passwords in known breach data using a privacy-preserving HIBP lookup
 - **Click-to-fill** — fills a login form only after you click the on-page Fill control or choose an entry in the popup
 - **Save after sign-in or signup** — offers to add or update a vault record after a password form is submitted
 - **Light and dark appearance** — light is the default; switch modes from the header and choose a green, blue, purple, or pink accent
@@ -105,6 +106,7 @@ With Remember Unlock enabled, the extension temporarily keeps your master passwo
 - **View** — click an entry in the list
 - **Edit** — "Edit" button on the entry page
 - **Favorite** — use the star button on the entry page to add or remove an entry from Favorites
+- **Folders** — create, rename, and delete folders in the entry list; use checkboxes in All items, Favorites, or Recents to move multiple passwords at once. Deleting a folder moves its passwords to Unfiled and lifts its subfolders one level.
 - **Delete** — choose "Delete," then enter the master password in the destructive-action dialog. An incorrect password leaves the entry unchanged and allows another attempt.
 - **Copy** — copy icon next to login, password, and URL fields
 

@@ -383,6 +383,40 @@ export default defineBackground(() => {
           return { success: true, data: entries } as EntriesResponse;
         }
 
+        case 'GET_BREACHED_ENTRY_IDS': {
+          const guard = await requireUnlocked();
+          if (guard) return guard;
+          const stored = await browser.storage.local.get('breachedEntryStates');
+          const states = stored.breachedEntryStates && typeof stored.breachedEntryStates === 'object'
+            ? stored.breachedEntryStates as Record<string, string>
+            : {};
+          const current = new Map(kdbx.getEntries().map((entry) => [entry.id, entry.modified]));
+          const validIds = Object.keys(states).filter((id) => current.get(id) === states[id]);
+          if (validIds.length !== Object.keys(states).length) {
+            await browser.storage.local.set({
+              breachedEntryStates: Object.fromEntries(validIds.map((id) => [id, states[id]])),
+            });
+          }
+          return { success: true, data: validIds };
+        }
+
+        case 'SAVE_BREACH_RESULTS': {
+          const guard = await requireUnlocked();
+          if (guard) return guard;
+          const stored = await browser.storage.local.get('breachedEntryStates');
+          const states = stored.breachedEntryStates && typeof stored.breachedEntryStates === 'object'
+            ? { ...stored.breachedEntryStates as Record<string, string> }
+            : {};
+          for (const result of msg.payload.results) {
+            const entry = kdbx.getEntry(result.id);
+            if (!entry || entry.modified !== result.modified) continue;
+            if (result.breached) states[result.id] = result.modified;
+            else delete states[result.id];
+          }
+          await browser.storage.local.set({ breachedEntryStates: states });
+          return { success: true, data: Object.keys(states) };
+        }
+
         case 'GET_RECENT_ENTRY_IDS': {
           const guard = await requireUnlocked();
           if (guard) return guard;
@@ -485,6 +519,38 @@ export default defineBackground(() => {
           if (guard) return guard;
           const groups = kdbx.getGroups();
           return { success: true, data: groups } as GroupsResponse;
+        }
+
+        case 'CREATE_GROUP': {
+          const guard = await requireUnlocked();
+          if (guard) return guard;
+          const group = kdbx.createGroup(msg.payload.name);
+          await persistDatabase();
+          return { success: true, data: group };
+        }
+
+        case 'RENAME_GROUP': {
+          const guard = await requireUnlocked();
+          if (guard) return guard;
+          if (!kdbx.renameGroup(msg.payload.id, msg.payload.name)) return { success: false, error: 'Folder not found' };
+          await persistDatabase();
+          return { success: true, data: null };
+        }
+
+        case 'DELETE_GROUP': {
+          const guard = await requireUnlocked();
+          if (guard) return guard;
+          if (!kdbx.deleteGroup(msg.payload.id)) return { success: false, error: 'Folder not found' };
+          await persistDatabase();
+          return { success: true, data: null };
+        }
+
+        case 'MOVE_ENTRIES': {
+          const guard = await requireUnlocked();
+          if (guard) return guard;
+          const moved = kdbx.moveEntries(msg.payload.ids, msg.payload.groupId);
+          await persistDatabase();
+          return { success: true, data: moved };
         }
 
         case 'GENERATE_PASSWORD': {

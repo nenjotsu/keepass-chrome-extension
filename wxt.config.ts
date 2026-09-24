@@ -32,7 +32,7 @@ export default defineConfig({
   manifest: {
     name: 'KeePass Password Manager',
     description:
-      'KeePass-compatible password manager. All data is encrypted locally — nothing leaves your browser.',
+      'KeePass-compatible password manager with local encryption and optional privacy-preserving breached-password checks.',
     homepage_url: 'https://github.com/Ilya37/keepass-chrome-extension',
     permissions: ['storage', 'alarms', 'clipboardWrite', 'favicon', 'scripting'],
     host_permissions: ['<all_urls>'],

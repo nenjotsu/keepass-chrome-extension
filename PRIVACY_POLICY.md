@@ -10,14 +10,14 @@ The KeePass Password Manager extension is designed with privacy as the core prin
 
 ### Data Collection
 
-**We do not collect or transmit your personal data to us or any third party:**
-- No user tracking
-- No analytics
-- No telemetry
+The extension does not send vault data to the developer. The leaked-password check is optional and only runs when you choose it:
+- No user tracking, analytics, or telemetry
 - No crash reporting to remote servers
-- No network requests to external services
+- No transmission of vault data to the developer
 
 When you submit a password-based sign-in or signup form, the extension may temporarily read the username and password from that form to offer to save them. Pending values stay in page memory, with a short-lived in-memory handoff through the extension's local background process if the page navigates before the prompt can appear. The extension uses them to check for a matching vault record and stores them in the vault only after you choose Save/Update. If the vault is locked or unavailable, the pending values are discarded. Nothing is transmitted to a remote service.
+
+When you choose **Check leaked passwords**, the extension asks for confirmation the first time and sends the first five characters of each distinct saved password's SHA-1 hash to the Have I Been Pwned (HIBP) Pwned Passwords range API. The password and full hash stay on your device; returned hash suffixes are compared locally. HIBP receives the partial-hash requests and normal request metadata such as your IP address. Password checks are not associated with saved usernames or websites. Weak-password checks run locally. See [HIBP's API documentation](https://haveibeenpwned.com/API/v3).
 
 ### Data Storage
 
@@ -56,15 +56,11 @@ All your passwords and database information are stored **locally** on your devic
 - Website access: To detect password forms, offer to save submitted credentials, and fill matching entries on websites
 - `clipboardWrite` (optional, requested when you first copy): To copy passwords
 
-None of these permissions are used to transmit data externally.
+The HIBP range lookup runs only after you choose the leaked-password check and confirm its first-use notice.
 
 ### Third-Party Services
 
-This extension does NOT use any third-party services:
-- No cloud storage
-- No external authentication
-- No remote backups
-- No advertising
+The optional leaked-password check uses the Have I Been Pwned Pwned Passwords API. No other third-party services are used.
 
 ### Data Deletion
 
