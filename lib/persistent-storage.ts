@@ -15,9 +15,10 @@ import type {
   StorageHealthReport,
   DatabaseLoadResult,
   StorageInitResult,
-  IDBDatabase,
+  IDBDatabase as StoredDatabase,
   IDBDatabaseVersion,
   IDBSyncStatus,
+  IDBBackupSnapshot,
   ChecksumAlgorithm,
 } from './storage-types';
 
@@ -34,7 +35,7 @@ const STORE_SYNC_STATUS = 'sync_status';
 
 // ── Global State ─────────────────────────────────────────────────
 
-let idbInstance: IDBDatabase | null = null;
+let idbInstance: globalThis.IDBDatabase | null = null;
 let initPromise: Promise<StorageInitResult> | null = null;
 
 // ── IndexedDB Initialization ─────────────────────────────────────
@@ -166,13 +167,13 @@ export async function persistDatabase(
     const timestamp = Date.now();
 
     // Get current version from IndexedDB
-    const current = await getFromIndexedDB<IDBDatabase>(STORE_DATABASES, 'db:current');
+        const current = await getFromIndexedDB<StoredDatabase>(STORE_DATABASES, 'db:current');
     const newVersion = (current?.version ?? 0) + 1;
 
     // 1. Save to IndexedDB (backup)
     if (idbInstance) {
       try {
-        await putToIndexedDB<IDBDatabase>(STORE_DATABASES, {
+        await putToIndexedDB<StoredDatabase>(STORE_DATABASES, {
           id: 'db:current',
           blob,
           checksum,
@@ -210,7 +211,7 @@ export async function persistDatabase(
       if (verify[STORAGE_KEY_DB]) {
         result.primaryStored = true;
         const verifyChecksum = await calculateChecksum(
-          base64ToArrayBuffer(verify[STORAGE_KEY_DB])
+          base64ToArrayBuffer(verify[STORAGE_KEY_DB] as string)
         );
         result.checksumMatch = verifyChecksum === checksum;
       }
@@ -266,7 +267,7 @@ export async function loadDatabase(): Promise<DatabaseLoadResult | null> {
     if (base64 && meta) {
       const blob = base64ToArrayBuffer(base64);
       const checksum = await calculateChecksum(blob);
-      const current = await getFromIndexedDB<IDBDatabase>(STORE_DATABASES, 'db:current');
+      const current = await getFromIndexedDB<StoredDatabase>(STORE_DATABASES, 'db:current');
 
       return {
         blob,
@@ -283,7 +284,7 @@ export async function loadDatabase(): Promise<DatabaseLoadResult | null> {
   // Fallback to IndexedDB
   try {
     if (idbInstance) {
-      const current = await getFromIndexedDB<IDBDatabase>(STORE_DATABASES, 'db:current');
+      const current = await getFromIndexedDB<StoredDatabase>(STORE_DATABASES, 'db:current');
       if (current) {
         return {
           blob: current.blob,
@@ -315,10 +316,25 @@ export async function recoverDatabaseVersion(versionId: number): Promise<ArrayBu
   // Fallback to current in local storage
   const result = await browser.storage.local.get(STORAGE_KEY_DB);
   if (result[STORAGE_KEY_DB]) {
-    return base64ToArrayBuffer(result[STORAGE_KEY_DB]);
+    return base64ToArrayBuffer(result[STORAGE_KEY_DB] as string);
   }
 
   throw new Error(`Database version ${versionId} not found`);
+}
+
+/** Persist an encrypted database snapshot for backup and recovery. */
+export async function saveBackupSnapshot(snapshot: IDBBackupSnapshot): Promise<void> {
+  await putToIndexedDB<IDBBackupSnapshot>(STORE_BACKUPS, snapshot);
+}
+
+/** Return snapshots newest first, bounded by the requested history size. */
+export async function getBackupSnapshots(limit: number = 10): Promise<IDBBackupSnapshot[]> {
+  const snapshots = await getAllFromIndexedDB<IDBBackupSnapshot>(STORE_BACKUPS);
+  return snapshots.sort((a, b) => b.timestamp - a.timestamp).slice(0, limit);
+}
+
+export async function getBackupSnapshot(timestamp: number): Promise<IDBBackupSnapshot | undefined> {
+  return getFromIndexedDB<IDBBackupSnapshot>(STORE_BACKUPS, timestamp);
 }
 
 // ── Integrity Checking ──────────────────────────────────────────
@@ -373,7 +389,7 @@ export async function getStorageHealthReport(): Promise<StorageHealthReport> {
       const versionsCount = await countObjectStore(STORE_VERSIONS);
       report.integrity.versionCount = versionsCount;
 
-      const current = await getFromIndexedDB<IDBDatabase>(STORE_DATABASES, 'db:current');
+      const current = await getFromIndexedDB<StoredDatabase>(STORE_DATABASES, 'db:current');
       if (current) {
         report.integrity.lastVersion = current.version;
       }
@@ -444,7 +460,7 @@ async function syncFromLocalToIndexedDB(): Promise<void> {
     const meta = result[STORAGE_KEY_META] as DatabaseMeta | undefined;
 
     // Check if already synced
-    const current = await getFromIndexedDB<IDBDatabase>(STORE_DATABASES, 'db:current');
+    const current = await getFromIndexedDB<StoredDatabase>(STORE_DATABASES, 'db:current');
     if (current) {
       return;  // Already synced
     }
@@ -453,7 +469,7 @@ async function syncFromLocalToIndexedDB(): Promise<void> {
       const blob = base64ToArrayBuffer(base64);
       const checksum = await calculateChecksum(blob);
 
-      await putToIndexedDB<IDBDatabase>(STORE_DATABASES, {
+      await putToIndexedDB<StoredDatabase>(STORE_DATABASES, {
         id: 'db:current',
         blob,
         checksum,
@@ -507,7 +523,7 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
 
 // ── IndexedDB Helpers ──────────────────────────────────────────
 
-function getDatabase(): IDBDatabase {
+function getDatabase(): globalThis.IDBDatabase {
   if (!idbInstance) throw new Error('IndexedDB not initialized');
   return idbInstance;
 }

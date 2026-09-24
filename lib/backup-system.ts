@@ -67,12 +67,11 @@ export async function createSnapshot(
       blob,
       checksum,
       metadata,
-      editCount,
+      editCount: editCounter,
       autoSnapshot: reason !== 'manual',
     };
 
-    // Store via persistent storage module
-    // This is a simplified approach - in real implementation would store directly in IndexedDB
+    await persistentStorage.saveBackupSnapshot(snapshot);
     console.log(`[backup-system] Creating ${reason} snapshot at ${new Date(timestamp).toISOString()}`);
     console.log(`  - Database: ${metadata.name} (${metadata.entryCount} entries)`);
     console.log(`  - Size: ${(blob.byteLength / 1024 / 1024).toFixed(2)} MB`);
@@ -152,10 +151,15 @@ export async function getBackupHistory(limit: number = 10): Promise<BackupEntry[
 }
 
 async function getBackupHistoryInternal(limit: number = 10): Promise<BackupEntry[]> {
-  // TODO: Implement when IndexedDB access is available
-  // For now, return empty array
-  console.log(`[backup-system] Getting backup history (limit: ${limit})`);
-  return [];
+  const snapshots = await persistentStorage.getBackupSnapshots(limit);
+  return snapshots.map((snapshot) => ({
+    timestamp: snapshot.timestamp,
+    version: snapshot.version,
+    reason: snapshot.reason,
+    size: snapshot.blob.byteLength,
+    checksum: snapshot.checksum,
+    metadata: snapshot.metadata,
+  }));
 }
 
 // ── Snapshot Restoration ─────────────────────────────────────────
@@ -164,14 +168,9 @@ async function getBackupHistoryInternal(limit: number = 10): Promise<BackupEntry
  * Restore database from a previous snapshot by timestamp.
  */
 export async function restoreSnapshot(timestamp: number): Promise<ArrayBuffer> {
-  try {
-    // TODO: Implement when IndexedDB access is available
-    console.log(`[backup-system] Restoring snapshot from ${new Date(timestamp).toISOString()}`);
-    throw new Error('Snapshot restore not yet implemented');
-  } catch (err) {
-    console.error('[backup-system] Failed to restore snapshot:', err);
-    throw err;
-  }
+  const snapshot = await persistentStorage.getBackupSnapshot(timestamp);
+  if (!snapshot) throw new Error(`Snapshot ${timestamp} not found`);
+  return snapshot.blob;
 }
 
 // ── Backup Cleanup ───────────────────────────────────────────────

@@ -199,10 +199,7 @@ function toHostname(input: string): string | null {
 function urlMatches(entryUrl: string, pageHostname: string): boolean {
   const entryHost = toHostname(entryUrl);
   if (!entryHost) return false;
-  return (
-    pageHostname === entryHost ||
-    pageHostname.endsWith('.' + entryHost)
-  );
+  return pageHostname === entryHost;
 }
 
 /** Get entries matching a URL (for autofill) */

@@ -28,45 +28,25 @@ export type MessageRequest =
 
 // ── Response types ─────────────────────────────────────────────
 
-export type MessageResponse =
-  | { success: true; data?: unknown }
+export type MessageResponse<T = unknown> =
+  | { success: true; data: T }
   | { success: false; error: string };
 
-export interface StateResponse extends MessageResponse {
-  success: true;
-  data: AppState;
-}
+export type StateResponse = MessageResponse<AppState>;
 
-export interface EntriesResponse extends MessageResponse {
-  success: true;
-  data: EntryData[];
-}
+export type EntriesResponse = MessageResponse<EntryData[]>;
 
-export interface EntryResponse extends MessageResponse {
-  success: true;
-  data: EntryData;
-}
+export type EntryResponse = MessageResponse<EntryData>;
 
-export interface GroupsResponse extends MessageResponse {
-  success: true;
-  data: GroupData[];
-}
+export type GroupsResponse = MessageResponse<GroupData[]>;
 
-export interface GeneratePasswordResponse extends MessageResponse {
-  success: true;
-  data: string;
-}
+export type GeneratePasswordResponse = MessageResponse<string>;
 
-export interface ExportResponse extends MessageResponse {
-  success: true;
-  data: number[];
-}
+export type ExportResponse = MessageResponse<number[]>;
 
 // ── New Response Types ──────────────────────────────────────────
 
-export interface BackupHistoryResponse extends MessageResponse {
-  success: true;
-  data: {
+export type BackupHistoryResponse = MessageResponse<{
     backups: Array<{
       timestamp: number;
       version: number;
@@ -74,12 +54,9 @@ export interface BackupHistoryResponse extends MessageResponse {
       size: number;
     }>;
     totalSize: number;
-  };
-}
+}>;
 
-export interface StorageHealthResponse extends MessageResponse {
-  success: true;
-  data: {
+export type StorageHealthResponse = MessageResponse<{
     chromLocalSize: number;
     indexedDbSize: number;
     lastSyncTime: number;
@@ -88,17 +65,13 @@ export interface StorageHealthResponse extends MessageResponse {
       versionCount: number;
     };
     issues: string[];
-  };
-}
+}>;
 
-export interface RecoveryStatusResponse extends MessageResponse {
-  success: true;
-  data: {
+export type RecoveryStatusResponse = MessageResponse<{
     hasRecoveryCodes: boolean;
     remainingCodes: number;
     codesGenerated: number;
-  };
-}
+}>;
 
 // ── Constants ──────────────────────────────────────────────────
 
@@ -128,15 +101,7 @@ export async function sendMessage<T extends MessageResponse = MessageResponse>(
     try {
       console.log(`[sendMessage] attempt ${attempt + 1} for ${message.type}`);
       const response = await Promise.race([
-        new Promise<MessageResponse>((resolve, reject) => {
-          chrome.runtime.sendMessage(message, (resp) => {
-            if (chrome.runtime.lastError) {
-              reject(new Error(chrome.runtime.lastError.message));
-            } else {
-              resolve(resp as MessageResponse);
-            }
-          });
-        }),
+        browser.runtime.sendMessage(message) as Promise<MessageResponse>,
         new Promise<undefined>((resolve) =>
           setTimeout(() => resolve(undefined), MESSAGE_TIMEOUT_MS),
         ),

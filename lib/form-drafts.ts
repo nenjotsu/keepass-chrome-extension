@@ -20,7 +20,7 @@ export interface CreateVaultDraft {
 export async function loadCreateVaultDraft(): Promise<CreateVaultDraft | null> {
   try {
     const r = await browser.storage.session.get(KEY_CREATE_VAULT);
-    const d = r[KEY_CREATE_VAULT];
+    const d = r[KEY_CREATE_VAULT] as Record<string, unknown> | undefined;
     if (!d || typeof d !== 'object') return null;
     return {
       name: String(d.name ?? ''),
@@ -96,7 +96,7 @@ export async function loadEntryFormDraft(entryId?: string): Promise<EntryFormDra
   try {
     const key = entryFormKey(entryId);
     const r = await browser.storage.session.get(key);
-    const d = r[key];
+    const d = r[key] as Record<string, unknown> | undefined;
     if (!d || typeof d !== 'object') return null;
     return {
       title: String(d.title ?? ''),

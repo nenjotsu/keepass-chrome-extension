@@ -51,7 +51,7 @@ export default defineContentScript({
           payload: { url: window.location.href },
         })) as EntriesResponse;
 
-        if (response.success && response.data.length > 0) {
+        if ('data' in response && response.data.length > 0) {
           // Add a subtle indicator that credentials are available
           addFillIndicator(passwordField, usernameField, response.data);
         }
@@ -63,7 +63,7 @@ export default defineContentScript({
     function addFillIndicator(
       passwordField: HTMLInputElement,
       usernameField: HTMLInputElement | null,
-      entries: EntriesResponse['data'],
+      entries: Extract<EntriesResponse, { success: true }>['data'],
     ) {
       // Add a small icon inside the password field to indicate autofill availability
       const indicator = document.createElement('div');

@@ -36,7 +36,7 @@ export function initCryptoEngine(): void {
       });
 
       console.log(`[crypto] ${typeName}: hash computed, ${result.length} bytes`);
-      return result.buffer;
+      return result.buffer.slice(0) as ArrayBuffer;
     },
   );
 }

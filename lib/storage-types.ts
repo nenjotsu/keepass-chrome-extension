@@ -84,7 +84,7 @@ export interface RecoveryCodesData {
   codes: RecoveryCodeEntry[];
   passwordHash: string;
   hashVersion: number;
-  algorithm: 'argon2id';
+  algorithm: 'pbkdf2-sha256';
   created: number;
   lastRotated: number;
 }
@@ -99,7 +99,7 @@ export interface RecoveryCodeEntry {
 export interface PasswordHashData {
   hash: string;
   version: number;
-  algorithm: 'argon2id';
+  algorithm: 'pbkdf2-sha256';
   created: number;
   saltLength: number;
   memorySize: number;

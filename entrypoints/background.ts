@@ -58,68 +58,10 @@ export default defineBackground(() => {
       console.error('Failed to initialize storage systems:', err);
     });
 
-  // ── Auto-unlock after service worker restart ───────────────
-  // Chrome MV3 can kill the service worker at any time.
-  // We store encrypted unlock token in chrome.storage.session (cleared on browser quit)
-  // so we can transparently re-unlock the database.
-
-  async function tryAutoUnlock(): Promise<boolean> {
-    if (kdbx.isUnlocked()) return true;
-
-    // Try to load encrypted unlock token (new system)
-    const tokenData = await storage.loadEncryptedUnlockToken();
-    if (!tokenData || Date.now() > tokenData.expiresAt) {
-      // Fallback to old plaintext password (for migration period)
-      const oldPassword = await storage.loadSessionPassword();
-      if (!oldPassword) return false;
-
-      const dbData = await persistentStorage.loadDatabase();
-      if (!dbData) return false;
-
-      try {
-        const op = await stateJournal.beginOperation('auto_unlock', {});
-        await kdbx.openDatabase(dbData.blob, oldPassword);
-        await stateJournal.completeOperation(op, '');
-        resetAutoLockTimer();
-        return true;
-      } catch (err) {
-        console.warn('Auto-unlock failed (old method):', err);
-        await storage.clearSessionPassword();
-        await stateJournal.rollbackOperation(await stateJournal.beginOperation('auto_unlock_failed', {}), String(err));
-        return false;
-      }
-    }
-
-    // Load database from new persistent storage
-    const dbData = await persistentStorage.loadDatabase();
-    if (!dbData) return false;
-
-    try {
-      // Decrypt token to get password (simplified - in real impl would use proper decryption)
-      const password = tokenData.token;
-
-      const op = await stateJournal.beginOperation('auto_unlock', {});
-      await kdbx.openDatabase(dbData.blob, password);
-      await stateJournal.completeOperation(op, '');
-      resetAutoLockTimer();
-      return true;
-    } catch (err) {
-      console.warn('Auto-unlock failed:', err);
-      await storage.clearEncryptedUnlockToken();
-      await stateJournal.rollbackOperation(await stateJournal.beginOperation('auto_unlock_failed', {}), String(err));
-      return false;
-    }
-  }
-
   // ── State helpers ──────────────────────────────────────────
 
   async function getAppState(): Promise<AppState> {
     if (kdbx.isUnlocked()) {
-      return { status: 'unlocked', meta: kdbx.getDatabaseMeta() };
-    }
-
-    // Try auto-unlock (service worker might have restarted)
-    if (await tryAutoUnlock()) {
       return { status: 'unlocked', meta: kdbx.getDatabaseMeta() };
     }
 
@@ -133,8 +75,6 @@ export default defineBackground(() => {
   /** Guard: ensure database is unlocked before data operations */
   async function requireUnlocked(): Promise<MessageResponse | null> {
     if (kdbx.isUnlocked()) return null;
-    // Try auto-unlock before failing
-    if (await tryAutoUnlock()) return null;
     return { success: false, error: NOT_UNLOCKED_ERROR };
   }
 
@@ -181,7 +121,7 @@ export default defineBackground(() => {
   browser.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === ALARM_AUTO_LOCK) {
       kdbx.closeDatabase();
-      storage.clearSessionPassword();
+      storage.clearSessionSecrets();
     }
     if (alarm.name === ALARM_CLIPBOARD_CLEAR) {
       clearClipboard();
@@ -190,18 +130,11 @@ export default defineBackground(() => {
 
   // ── Message handler ────────────────────────────────────────
 
-  // Use native chrome API directly to avoid webextension-polyfill issues
-  // with async message handling in MV3 Service Workers
-  chrome.runtime.onMessage.addListener(
-    (message: MessageRequest, _sender, sendResponse) => {
-      handleMessage(message).then((response) => {
-        sendResponse(response);
-      }).catch((err) => {
-        console.error('Message handler error:', err);
-        sendResponse({ success: false, error: String(err) });
-      });
-      return true; // keep message channel open for async sendResponse
-    },
+  browser.runtime.onMessage.addListener((message: MessageRequest) =>
+    handleMessage(message).catch((err): MessageResponse => {
+      console.error('Message handler error:', err);
+      return { success: false, error: String(err) };
+    }),
   );
 
   async function handleMessage(msg: MessageRequest): Promise<MessageResponse> {
@@ -226,12 +159,6 @@ export default defineBackground(() => {
 
             // Initialize recovery codes and password hash
             const recoveryData = await recoverySystem.initializeRecoveryCodes(password);
-
-            // Save encrypted unlock token (instead of plaintext password)
-            await storage.saveEncryptedUnlockToken(password, 3600);
-
-            // Also keep plaintext for this session for compatibility
-            await storage.saveSessionPassword(password);
 
             resetAutoLockTimer();
             await stateJournal.completeOperation(op, '');
@@ -271,10 +198,6 @@ export default defineBackground(() => {
             // Initialize recovery codes for imported database
             const recoveryData = await recoverySystem.initializeRecoveryCodes(password);
 
-            // Save encrypted unlock token
-            await storage.saveEncryptedUnlockToken(password, 3600);
-            await storage.saveSessionPassword(password);
-
             resetAutoLockTimer();
             await stateJournal.completeOperation(op, '');
 
@@ -309,12 +232,6 @@ export default defineBackground(() => {
               throw err;
             }
 
-            // Save encrypted unlock token
-            await storage.saveEncryptedUnlockToken(msg.payload.password, 3600);
-
-            // Also keep plaintext for this session (compatibility)
-            await storage.saveSessionPassword(msg.payload.password);
-
             resetAutoLockTimer();
             await stateJournal.completeOperation(op, '');
 
@@ -327,10 +244,9 @@ export default defineBackground(() => {
 
         case 'LOCK': {
           kdbx.closeDatabase();
-          await storage.clearSessionPassword();
-          await storage.clearEncryptedUnlockToken();
+          await storage.clearSessionSecrets();
           browser.alarms.clear(ALARM_AUTO_LOCK);
-          return { success: true };
+          return { success: true, data: null };
         }
 
         case 'GET_ENTRIES': {
@@ -379,7 +295,7 @@ export default defineBackground(() => {
           const deleted = kdbx.deleteEntry(msg.payload.id);
           if (!deleted) return { success: false, error: 'Entry not found' };
           await persistDatabase();
-          return { success: true };
+          return { success: true, data: null };
         }
 
         case 'GET_GROUPS': {
@@ -399,7 +315,7 @@ export default defineBackground(() => {
           browser.alarms.create(ALARM_CLIPBOARD_CLEAR, {
             delayInMinutes: 15 / 60,
           });
-          return { success: true };
+          return { success: true, data: null };
         }
 
         case 'DELETE_DATABASE': {
@@ -415,8 +331,7 @@ export default defineBackground(() => {
             await recoverySystem.clearRecoveryCodes();
 
             // Clear tokens
-            await storage.clearEncryptedUnlockToken();
-            await storage.clearSessionPassword();
+          await storage.clearSessionSecrets();
 
             // Clear backup system state
             backupSystem.cleanup();
@@ -440,12 +355,7 @@ export default defineBackground(() => {
         }
 
         case 'GET_ENTRIES_FOR_URL': {
-          if (!kdbx.isUnlocked()) {
-            await tryAutoUnlock();
-            if (!kdbx.isUnlocked()) {
-              return { success: true, data: [] } as EntriesResponse;
-            }
-          }
+          if (!kdbx.isUnlocked()) return { success: true, data: [] } as EntriesResponse;
           resetAutoLockTimer();
           const urlEntries = kdbx.getEntriesForUrl(msg.payload.url);
           return { success: true, data: urlEntries } as EntriesResponse;
@@ -500,7 +410,7 @@ export default defineBackground(() => {
               },
               args: [username, password],
             });
-            return { success: true };
+            return { success: true, data: null };
           } catch (err) {
             return { success: false, error: String(err) };
           }
@@ -536,8 +446,6 @@ export default defineBackground(() => {
 
             await kdbx.openDatabase(blob, password);
             await persistDatabase();
-            await storage.saveEncryptedUnlockToken(password, 3600);
-
             resetAutoLockTimer();
             await stateJournal.completeOperation(op, '');
 

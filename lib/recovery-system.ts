@@ -8,6 +8,8 @@
 
 import type { RecoveryCodes, RecoveryCodeEntry, RecoveryCodesData, PasswordHashData } from './storage-types';
 
+const RECOVERY_STORAGE_KEY = 'recovery_codes';
+
 // ── Constants ────────────────────────────────────────────────────
 
 const RECOVERY_CODES_COUNT = 20;
@@ -28,15 +30,19 @@ const ARGON2_PARALLELISM = 1;
 export function generateRecoveryCodes(count: number = RECOVERY_CODES_COUNT): string[] {
   const codes: string[] = [];
   const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const unbiasedLimit = 256 - (256 % charset.length);
 
   for (let i = 0; i < count; i++) {
     let code = '';
-    for (let j = 0; j < RECOVERY_CODE_LENGTH; j++) {
-      const randomIndex = Math.floor(Math.random() * charset.length);
-      code += charset[randomIndex];
+    while (code.replaceAll(CODE_SEPARATOR, '').length < RECOVERY_CODE_LENGTH) {
+      const random = crypto.getRandomValues(new Uint8Array(1))[0];
+      if (random >= unbiasedLimit) continue;
+
+      code += charset[random % charset.length];
+      const characterCount = code.replaceAll(CODE_SEPARATOR, '').length;
 
       // Add separator every 4 characters
-      if ((j + 1) % 4 === 0 && j < RECOVERY_CODE_LENGTH - 1) {
+      if (characterCount % 4 === 0 && characterCount < RECOVERY_CODE_LENGTH) {
         code += CODE_SEPARATOR;
       }
     }
@@ -97,7 +103,7 @@ export async function hashPassword(password: string): Promise<PasswordHashData> 
     return {
       hash,
       version: 1,
-      algorithm: 'argon2id',  // Labeled as argon2id for future compatibility
+      algorithm: 'pbkdf2-sha256',
       created: Date.now(),
       saltLength: 16,
       memorySize: ARGON2_MEMORY_SIZE,
@@ -114,7 +120,7 @@ export async function hashPassword(password: string): Promise<PasswordHashData> 
  */
 export async function verifyPasswordHash(password: string, hashData: PasswordHashData): Promise<boolean> {
   try {
-    if (hashData.algorithm !== 'argon2id') {
+    if (hashData.algorithm !== 'pbkdf2-sha256') {
       console.warn('[recovery-system] Unsupported hash algorithm:', hashData.algorithm);
       return false;
     }
@@ -174,20 +180,20 @@ export async function initializeRecoveryCodes(masterPassword: string): Promise<R
     const passwordHash = await hashPassword(masterPassword);
 
     const data: RecoveryCodesData = {
-      codes: codes.map((code) => ({
-        code,
+      codes: await Promise.all(codes.map(async (code) => ({
+        code: await hashRecoveryCode(code),
         used: false,
         usedAt: null,
         created: Date.now(),
-      })),
+      }))),
       passwordHash: passwordHash.hash,
       hashVersion: 1,
-      algorithm: 'argon2id',
+      algorithm: 'pbkdf2-sha256',
       created: Date.now(),
       lastRotated: Date.now(),
     };
 
-    // TODO: Store data in IndexedDB via persistent-storage module
+    await browser.storage.local.set({ [RECOVERY_STORAGE_KEY]: data });
 
     console.log('[recovery-system] Recovery codes initialized');
 
@@ -207,9 +213,17 @@ export async function initializeRecoveryCodes(masterPassword: string): Promise<R
  * Check if password is correct (for verification during operations).
  */
 export async function verifyPassword(password: string): Promise<boolean> {
-  // TODO: Implement when IndexedDB access is available
-  console.log('[recovery-system] Verifying password');
-  return false;
+  const data = await loadRecoveryData();
+  if (!data) return false;
+  return verifyPasswordHash(password, {
+    hash: data.passwordHash,
+    version: data.hashVersion,
+    algorithm: data.algorithm,
+    created: data.created,
+    saltLength: 16,
+    memorySize: ARGON2_MEMORY_SIZE,
+    iterations: 100000,
+  });
 }
 
 /**
@@ -217,18 +231,15 @@ export async function verifyPassword(password: string): Promise<boolean> {
  */
 export async function useRecoveryCode(code: string): Promise<boolean> {
   try {
-    const normalized = normalizeRecoveryCode(code);
-
-    // TODO: Implement when IndexedDB access is available
-    // Should:
-    // 1. Load recovery codes
-    // 2. Find matching code
-    // 3. Check if already used
-    // 4. Mark as used with timestamp
-    // 5. Save back to IndexedDB
-
-    console.log('[recovery-system] Using recovery code');
-    return false;
+    const data = await loadRecoveryData();
+    if (!data) return false;
+    const codeHash = await hashRecoveryCode(normalizeRecoveryCode(code));
+    const match = data.codes.find((entry) => entry.code === codeHash && !entry.used);
+    if (!match) return false;
+    match.used = true;
+    match.usedAt = Date.now();
+    await browser.storage.local.set({ [RECOVERY_STORAGE_KEY]: data });
+    return true;
   } catch (err) {
     console.error('[recovery-system] Failed to use recovery code:', err);
     return false;
@@ -240,8 +251,8 @@ export async function useRecoveryCode(code: string): Promise<boolean> {
  */
 export async function getRemainingRecoveryCodes(): Promise<number> {
   try {
-    // TODO: Implement when IndexedDB access is available
-    return 0;
+    const data = await loadRecoveryData();
+    return data?.codes.filter((code) => !code.used).length ?? 0;
   } catch (err) {
     console.error('[recovery-system] Failed to get remaining codes:', err);
     return 0;
@@ -277,10 +288,11 @@ export async function updatePasswordHash(newPassword: string): Promise<void> {
   try {
     const newHash = await hashPassword(newPassword);
 
-    // TODO: Implement when IndexedDB access is available
-    // Should update the recovery codes store with new hash
-
-    console.log('[recovery-system] Password hash updated');
+    const data = await loadRecoveryData();
+    if (!data) return;
+    data.passwordHash = newHash.hash;
+    data.algorithm = newHash.algorithm;
+    await browser.storage.local.set({ [RECOVERY_STORAGE_KEY]: data });
   } catch (err) {
     console.error('[recovery-system] Failed to update password hash:', err);
     throw err;
@@ -299,10 +311,7 @@ export async function displayRecoveryCodes(masterPassword: string): Promise<stri
       return null;
     }
 
-    // TODO: Implement when IndexedDB access is available
-    // Should return list of unused recovery codes
-
-    return [];
+    return null;
   } catch (err) {
     console.error('[recovery-system] Failed to display recovery codes:', err);
     return null;
@@ -314,8 +323,7 @@ export async function displayRecoveryCodes(masterPassword: string): Promise<stri
  */
 export async function clearRecoveryCodes(): Promise<void> {
   try {
-    // TODO: Implement when IndexedDB access is available
-    console.log('[recovery-system] Recovery codes cleared');
+    await browser.storage.local.remove(RECOVERY_STORAGE_KEY);
   } catch (err) {
     console.warn('[recovery-system] Failed to clear recovery codes:', err);
   }
@@ -338,4 +346,14 @@ export function isValidRecoveryCodeFormat(code: string): boolean {
   // Format: XXXX-XXXX-XXXX or XXXXXXXXXXXX
   const pattern = /^[A-Z0-9]{4}-?[A-Z0-9]{4}-?[A-Z0-9]{4}$/;
   return pattern.test(normalized);
+}
+
+async function hashRecoveryCode(code: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalizeRecoveryCode(code)));
+  return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function loadRecoveryData(): Promise<RecoveryCodesData | null> {
+  const result = await browser.storage.local.get(RECOVERY_STORAGE_KEY);
+  return (result[RECOVERY_STORAGE_KEY] as RecoveryCodesData | undefined) ?? null;
 }

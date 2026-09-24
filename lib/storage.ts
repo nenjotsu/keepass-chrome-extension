@@ -1,15 +1,14 @@
 import { STORAGE_KEY_DB, STORAGE_KEY_META } from './constants';
 import type { DatabaseMeta } from './types';
 import * as persistentStorage from './persistent-storage';
-import type { StorageHealthReport, EncryptedUnlockToken, OperationId } from './storage-types';
+import type { StorageHealthReport, OperationId } from './storage-types';
 
 /**
  * Storage helpers for saving/loading the encrypted .kdbx blob
  * and associated metadata.
  *
  * - chrome.storage.local: persistent across browser restarts (encrypted kdbx blob + meta)
- * - chrome.storage.session: persists across service worker restarts but cleared on browser quit
- *   (used to keep the master password so the DB can auto-unlock after SW restart)
+ * - chrome.storage.session: used only for non-secret, session-scoped state.
  */
 
 const SESSION_KEY_PASSWORD = 'session_password';
@@ -77,35 +76,18 @@ export async function loadDatabaseMeta(): Promise<DatabaseMeta | null> {
 /** Remove database from storage completely */
 export async function removeDatabaseFromStorage(): Promise<void> {
   await browser.storage.local.remove([STORAGE_KEY_DB, STORAGE_KEY_META]);
-  await clearSessionPassword();
+  await clearSessionSecrets();
 }
 
 // ── Session storage (survives SW restarts, cleared on browser quit) ──
 
-/** Save master password to session storage for auto-unlock after SW restart */
-export async function saveSessionPassword(password: string): Promise<void> {
+/** Remove legacy session secrets left by earlier releases. */
+export async function clearSessionSecrets(): Promise<void> {
   try {
-    await browser.storage.session.set({ [SESSION_KEY_PASSWORD]: password });
-  } catch (err) {
-    // session storage might not be available in all contexts
-    console.warn('Could not save session password:', err);
-  }
-}
-
-/** Load master password from session storage */
-export async function loadSessionPassword(): Promise<string | null> {
-  try {
-    const result = await browser.storage.session.get(SESSION_KEY_PASSWORD);
-    return (result[SESSION_KEY_PASSWORD] as string) ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/** Clear master password from session storage */
-export async function clearSessionPassword(): Promise<void> {
-  try {
-    await browser.storage.session.remove(SESSION_KEY_PASSWORD);
+    await browser.storage.session.remove([
+      SESSION_KEY_PASSWORD,
+      SESSION_KEY_UNLOCK_TOKEN,
+    ]);
   } catch {
     // ignore
   }
@@ -126,67 +108,9 @@ export async function initializeAllStorageSystems(): Promise<void> {
 }
 
 /**
- * Save encrypted unlock token for auto-unlock after SW restart.
- * This is preferable to storing the plaintext master password.
- * Token is stored in session storage (cleared on browser quit).
+ * The extension intentionally does not persist unlock material. This prevents
+ * service-worker restarts and expired auto-lock timers from reopening a vault.
  */
-export async function saveEncryptedUnlockToken(
-  token: string,
-  ttlSeconds: number = 3600,
-): Promise<void> {
-  const expiresAt = Date.now() + ttlSeconds * 1000;
-  const tokenData: EncryptedUnlockToken = {
-    token,
-    expiresAt,
-    createdAt: Date.now(),
-  };
-
-  try {
-    await browser.storage.session.set({
-      [SESSION_KEY_UNLOCK_TOKEN]: JSON.stringify(tokenData),
-    });
-    console.log(`[storage] Encrypted unlock token saved (expires in ${ttlSeconds}s)`);
-  } catch (err) {
-    console.warn('[storage] Could not save encrypted unlock token:', err);
-  }
-}
-
-/**
- * Load encrypted unlock token from session storage.
- * Returns null if token is missing or expired.
- */
-export async function loadEncryptedUnlockToken(): Promise<EncryptedUnlockToken | null> {
-  try {
-    const result = await browser.storage.session.get(SESSION_KEY_UNLOCK_TOKEN);
-    const tokenStr = result[SESSION_KEY_UNLOCK_TOKEN] as string | undefined;
-
-    if (!tokenStr) return null;
-
-    const tokenData = JSON.parse(tokenStr) as EncryptedUnlockToken;
-
-    // Check if expired
-    if (Date.now() > tokenData.expiresAt) {
-      await clearEncryptedUnlockToken();
-      return null;
-    }
-
-    return tokenData;
-  } catch (err) {
-    console.warn('[storage] Could not load encrypted unlock token:', err);
-    return null;
-  }
-}
-
-/**
- * Clear encrypted unlock token from session storage.
- */
-export async function clearEncryptedUnlockToken(): Promise<void> {
-  try {
-    await browser.storage.session.remove(SESSION_KEY_UNLOCK_TOKEN);
-  } catch {
-    // ignore
-  }
-}
 
 /**
  * Get health report for all storage systems.

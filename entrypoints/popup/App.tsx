@@ -18,6 +18,13 @@ type Page =
   | { name: 'entry_form'; entry?: EntryData }
   | { name: 'generator' };
 
+function isPage(value: unknown): value is Page {
+  if (!value || typeof value !== 'object' || !('name' in value)) return false;
+  return ['create_vault', 'unlock', 'entry_list', 'entry_detail', 'entry_form', 'generator'].includes(
+    (value as { name: unknown }).name as string,
+  );
+}
+
 function App() {
   const [page, setPage] = useState<Page>({ name: 'loading' });
   const [appState, setAppState] = useState<AppState | null>(null);
@@ -75,13 +82,14 @@ function App() {
         if (res.success) setAppState(res.data);
         const state = res.success ? res.data : null;
         const { popupPageState } = await browser.storage.local.get('popupPageState');
+        const savedPage = isPage(popupPageState) ? popupPageState : null;
 
-        if (state?.status === 'unlocked' && popupPageState) {
-          setPage(popupPageState);
+        if (state?.status === 'unlocked' && savedPage) {
+          setPage(savedPage);
         } else if (state?.status === 'locked') {
-          setPage(popupPageState?.name === 'unlock' ? popupPageState : { name: 'unlock' });
+          setPage(savedPage?.name === 'unlock' ? savedPage : { name: 'unlock' });
         } else if (state?.status === 'no_database') {
-          setPage(popupPageState?.name === 'create_vault' ? popupPageState : { name: 'create_vault' });
+          setPage(savedPage?.name === 'create_vault' ? savedPage : { name: 'create_vault' });
         } else {
           setPage(state?.status === 'unlocked' ? { name: 'entry_list' } : { name: 'create_vault' });
         }
@@ -144,7 +152,7 @@ function App() {
           console.log('[Export] Download completed');
         }, 100);
       } else {
-        console.error('[Export] Export failed:', res.error);
+        console.error('[Export] Export failed:', 'error' in res ? res.error : 'No export data returned');
       }
     } catch (err) {
       console.error('[Export] Error:', err);

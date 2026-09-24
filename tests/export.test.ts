@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { AppState, ExportResponse } from '@/lib/types';
+import type { AppState } from '@/lib/types';
+import type { ExportResponse } from '@/lib/messages';
+
+function databaseName(state: AppState | null): string {
+  return state && state.status !== 'no_database' ? state.meta.name : 'keepass-export';
+}
 
 /**
  * Test suite for export functionality
@@ -24,9 +29,7 @@ describe('Export Database Functionality', () => {
     };
 
     // Simulate the logic from handleExportDatabase
-    const dbName = mockAppState && mockAppState.status !== 'no_database'
-      ? mockAppState.meta.name
-      : 'keepass-export';
+    const dbName = databaseName(mockAppState);
 
     expect(dbName).toBe('My Work Passwords');
   });
@@ -44,9 +47,7 @@ describe('Export Database Functionality', () => {
       },
     };
 
-    const dbName = mockAppState && mockAppState.status !== 'no_database'
-      ? mockAppState.meta.name
-      : 'keepass-export';
+    const dbName = databaseName(mockAppState);
 
     expect(dbName).toBe('Personal Vault');
   });
@@ -59,9 +60,7 @@ describe('Export Database Functionality', () => {
       status: 'no_database',
     };
 
-    const dbName = mockAppState && mockAppState.status !== 'no_database'
-      ? mockAppState.meta.name
-      : 'keepass-export';
+    const dbName = databaseName(mockAppState);
 
     expect(dbName).toBe('keepass-export');
   });
@@ -72,9 +71,7 @@ describe('Export Database Functionality', () => {
   it('should use default name when appState is null', () => {
     const mockAppState: AppState | null = null;
 
-    const dbName = mockAppState && mockAppState.status !== 'no_database'
-      ? mockAppState.meta.name
-      : 'keepass-export';
+    const dbName = databaseName(mockAppState);
 
     expect(dbName).toBe('keepass-export');
   });
@@ -92,9 +89,7 @@ describe('Export Database Functionality', () => {
       },
     };
 
-    const dbName = mockAppState && mockAppState.status !== 'no_database'
-      ? mockAppState.meta.name
-      : 'keepass-export';
+    const dbName = databaseName(mockAppState);
 
     const timestamp = new Date('2026-02-21').toISOString().split('T')[0];
     const filename = `${dbName}-${timestamp}.kdbx`;
@@ -115,9 +110,7 @@ describe('Export Database Functionality', () => {
       },
     };
 
-    const dbName = mockAppState && mockAppState.status !== 'no_database'
-      ? mockAppState.meta.name
-      : 'keepass-export';
+    const dbName = databaseName(mockAppState);
 
     const timestamp = new Date('2026-02-21').toISOString().split('T')[0];
     const filename = `${dbName}-${timestamp}.kdbx`;
@@ -195,7 +188,7 @@ describe('Export Database Functionality', () => {
       },
     };
 
-    const dbName = mockAppState && mockAppState.status !== 'no_database'
+    const dbName = mockAppState && 'meta' in mockAppState
       ? mockAppState.meta.name
       : 'keepass-export';
 
