@@ -1,5 +1,5 @@
 import * as kdbxweb from 'kdbxweb';
-import type { EntryData, GroupData, DatabaseMeta } from './types';
+import type { EntryData, GroupData, DatabaseMeta, SaveMatchData } from './types';
 
 /**
  * Wrapper around kdbxweb for working with .kdbx databases.
@@ -7,6 +7,9 @@ import type { EntryData, GroupData, DatabaseMeta } from './types';
  */
 
 let currentDb: kdbxweb.Kdbx | null = null;
+const FAVORITE_FIELD = 'KeePassChromeExtension.Favorite';
+const AUTO_FILL_FIELD = 'KeePassChromeExtension.AutoFill';
+const AUTO_LOGIN_FIELD = 'KeePassChromeExtension.AutoLogin';
 
 // ── Database lifecycle ─────────────────────────────────────────
 
@@ -132,6 +135,9 @@ function kdbxEntryToData(entry: kdbxweb.KdbxEntry): EntryData {
     groupId: entry.parentGroup?.uuid.toString() ?? '',
     created: timeToIso(entry.times.creationTime),
     modified: timeToIso(entry.times.lastModTime),
+    favorite: getField(FAVORITE_FIELD) === 'true',
+    autoFill: getField(AUTO_FILL_FIELD) !== 'false',
+    autoLogin: getField(AUTO_LOGIN_FIELD) === 'true',
   };
 }
 
@@ -206,7 +212,18 @@ function urlMatches(entryUrl: string, pageHostname: string): boolean {
 export function getEntriesForUrl(url: string): EntryData[] {
   const pageHost = toHostname(url);
   if (!pageHost) return [];
-  return getEntries().filter((e) => e.url && urlMatches(e.url, pageHost));
+  return getEntries().filter((e) => e.autoFill !== false && e.url && urlMatches(e.url, pageHost));
+}
+
+/** Find a same-host, same-username entry without exposing its password. */
+export function findSaveMatch(url: string, username: string): SaveMatchData | null {
+  const host = toHostname(url);
+  const normalizedUsername = username.trim().toLocaleLowerCase();
+  if (!host || !normalizedUsername) return null;
+  const match = getEntries().find((entry) =>
+    toHostname(entry.url) === host && entry.username.trim().toLocaleLowerCase() === normalizedUsername,
+  );
+  return match ? { id: match.id, title: match.title, username: match.username, url: match.url } : null;
 }
 
 /** Create a new entry in a group */
@@ -232,6 +249,9 @@ export function createEntry(
   entry.fields.set('URL', data.url);
   entry.fields.set('Notes', data.notes);
   entry.tags = data.tags || [];
+  if (data.favorite) entry.fields.set(FAVORITE_FIELD, 'true');
+  if (data.autoFill === false) entry.fields.set(AUTO_FILL_FIELD, 'false');
+  if (data.autoLogin) entry.fields.set(AUTO_LOGIN_FIELD, 'true');
 
   return kdbxEntryToData(entry);
 }
@@ -253,12 +273,28 @@ export function updateEntry(data: EntryData): EntryData | null {
       entry.fields.set('URL', data.url);
       entry.fields.set('Notes', data.notes);
       entry.tags = data.tags || [];
+      if (data.favorite) entry.fields.set(FAVORITE_FIELD, 'true');
+      else entry.fields.delete(FAVORITE_FIELD);
+      if (data.autoFill === false) entry.fields.set(AUTO_FILL_FIELD, 'false');
+      else entry.fields.delete(AUTO_FILL_FIELD);
+      if (data.autoLogin) entry.fields.set(AUTO_LOGIN_FIELD, 'true');
+      else entry.fields.delete(AUTO_LOGIN_FIELD);
       entry.times.update();
 
       return kdbxEntryToData(entry);
     }
   }
   return null;
+}
+
+/** Update submitted login details while preserving the rest of a matched entry. */
+export function updateEntryCredentials(
+  id: string,
+  credentials: Pick<EntryData, 'title' | 'url' | 'username' | 'password'>,
+): EntryData | null {
+  const entry = getEntry(id);
+  if (!entry) return null;
+  return updateEntry({ ...entry, ...credentials });
 }
 
 /** Delete an entry (moves to recycle bin or deletes permanently) */

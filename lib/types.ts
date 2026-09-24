@@ -10,6 +10,26 @@ export interface EntryData {
   groupId: string;
   created: string;
   modified: string;
+  /** Stored as a namespaced custom KDBX field so it travels with the vault. */
+  favorite?: boolean;
+  /** Defaults to true for entries created before and after this setting was added. */
+  autoFill?: boolean;
+  /** Defaults to false; when enabled, a clear login submit button is clicked after autofill. */
+  autoLogin?: boolean;
+}
+
+export interface SaveMatchData {
+  id: string;
+  title: string;
+  username: string;
+  url: string;
+}
+
+export interface PendingCredentialData {
+  title: string;
+  username: string;
+  password: string;
+  url: string;
 }
 
 /** Represents a group/folder in the database */

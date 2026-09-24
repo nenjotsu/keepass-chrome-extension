@@ -3,6 +3,17 @@ import type { EntryData } from '@/lib/types';
 import type { MessageResponse } from '@/lib/messages';
 import { sendMessage } from '@/lib/messages';
 import { CopyButton } from '../components/CopyButton';
+import { PasswordInput } from '../components/PasswordInput';
+
+function displayTitle(entry: EntryData): string {
+  if (entry.title && entry.title !== 'Untitled') return entry.title;
+  const value = entry.url.trim();
+  try {
+    return new URL(value.startsWith('http') ? value : `https://${value}`).hostname || 'Untitled';
+  } catch {
+    return 'Untitled';
+  }
+}
 
 interface Props {
   entry: EntryData;
@@ -15,17 +26,49 @@ interface Props {
 export function EntryDetail({ entry, onEdit, onDelete, onBack, onSessionLost }: Props) {
   const [showPassword, setShowPassword] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [favorite, setFavorite] = useState(entry.favorite ?? false);
 
-  const handleDelete = async () => {
-    if (!confirmDelete) {
-      setConfirmDelete(true);
+  const toggleFavorite = async () => {
+    const nextFavorite = !favorite;
+    const res = await sendMessage({
+      type: 'UPDATE_ENTRY',
+      payload: { entry: { ...entry, favorite: nextFavorite } },
+    });
+    if (!res.success) {
+      onSessionLost(res);
       return;
     }
-    const res = await sendMessage({ type: 'DELETE_ENTRY', payload: { id: entry.id } });
-    if (!res.success) {
-      if (onSessionLost(res)) return;
+    setFavorite(nextFavorite);
+  };
+
+  const handleDelete = async () => {
+    if (!deletePassword) {
+      setDeleteError('Enter your master password');
+      return;
     }
-    onDelete();
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      const res = await sendMessage({ type: 'DELETE_ENTRY', payload: { id: entry.id, password: deletePassword } });
+      if (!res.success) {
+        if (onSessionLost(res)) return;
+        setDeletePassword('');
+        setDeleteError('Wrong password. Try again.');
+        return;
+      }
+      onDelete();
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const cancelDelete = () => {
+    setConfirmDelete(false);
+    setDeletePassword('');
+    setDeleteError('');
   };
 
   const fields = [
@@ -45,7 +88,7 @@ export function EntryDetail({ entry, onEdit, onDelete, onBack, onSessionLost }: 
       {/* Title */}
       <div className="mb-4">
         <h2 className="text-lg font-semibold text-gray-800">
-          {entry.title || 'Untitled'}
+          {displayTitle(entry)}
         </h2>
         {entry.tags.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1">
@@ -91,7 +134,7 @@ export function EntryDetail({ entry, onEdit, onDelete, onBack, onSessionLost }: 
                       </button>
                     )}
                     {'copyable' in field && field.copyable && (
-                      <CopyButton text={field.value} />
+                      <CopyButton text={field.value} entryId={entry.id} />
                     )}
                   </div>
                 </div>
@@ -121,22 +164,43 @@ export function EntryDetail({ entry, onEdit, onDelete, onBack, onSessionLost }: 
       {/* Actions */}
       <div className="mt-4 flex gap-2">
         <button
+          onClick={toggleFavorite}
+          className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${favorite ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}
+          title={favorite ? 'Remove from favorites' : 'Add to favorites'}
+        >
+          {favorite ? '★' : '☆'}
+        </button>
+        <button
           onClick={() => onEdit(entry)}
           className="flex-1 bg-emerald-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-emerald-700 transition-colors"
         >
           Edit
         </button>
         <button
-          onClick={handleDelete}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            confirmDelete
-              ? 'bg-red-600 text-white hover:bg-red-700'
-              : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
-          }`}
+          onClick={() => setConfirmDelete(true)}
+          className="px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-gray-200 text-gray-600 hover:bg-gray-300"
         >
-          {confirmDelete ? 'Confirm?' : 'Delete'}
+          Delete
         </button>
       </div>
+
+      {confirmDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-5">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete entry?</h3>
+            <p className="text-sm text-gray-600 mb-4">This action cannot be undone. Enter your master password to continue.</p>
+            <div onKeyDown={(event) => event.key === 'Enter' && handleDelete()}>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Master Password</label>
+              <PasswordInput value={deletePassword} onChange={setDeletePassword} placeholder="Enter master password" autoFocus />
+            </div>
+            {deleteError && <div className="text-red-600 text-sm bg-red-50 px-3 py-2 rounded-lg mt-3">{deleteError}</div>}
+            <div className="flex gap-2 mt-4">
+              <button onClick={cancelDelete} disabled={deleting} className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50">Cancel</button>
+              <button onClick={handleDelete} disabled={deleting || !deletePassword} className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">{deleting ? 'Deleting...' : 'Delete'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

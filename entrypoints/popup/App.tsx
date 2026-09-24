@@ -8,6 +8,7 @@ import { EntryList } from './pages/EntryList';
 import { EntryForm } from './pages/EntryForm';
 import { EntryDetail } from './pages/EntryDetail';
 import { Generator } from './pages/Generator';
+import { PasswordInput } from './components/PasswordInput';
 
 type Page =
   | { name: 'loading' }
@@ -17,6 +18,15 @@ type Page =
   | { name: 'entry_detail'; entry: EntryData }
   | { name: 'entry_form'; entry?: EntryData }
   | { name: 'generator' };
+
+type ThemeName = 'green' | 'blue' | 'purple' | 'pink';
+type ThemeMode = 'light' | 'dark';
+const themes: Array<{ id: ThemeName; label: string; color: string }> = [
+  { id: 'green', label: 'Pastel green', color: '#a7d7bd' },
+  { id: 'blue', label: 'Pastel blue', color: '#a9c9e8' },
+  { id: 'purple', label: 'Pastel purple', color: '#c6b6e8' },
+  { id: 'pink', label: 'Pastel pink', color: '#efb8c9' },
+];
 
 function isPage(value: unknown): value is Page {
   if (!value || typeof value !== 'object' || !('name' in value)) return false;
@@ -29,6 +39,31 @@ function App() {
   const [page, setPage] = useState<Page>({ name: 'loading' });
   const [appState, setAppState] = useState<AppState | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [deletingDatabase, setDeletingDatabase] = useState(false);
+  const [theme, setTheme] = useState<ThemeName>('green');
+  const [themeReady, setThemeReady] = useState(false);
+  const [themeMode, setThemeMode] = useState<ThemeMode>('light');
+
+  useEffect(() => {
+    void browser.storage.local.get(['uiTheme', 'uiAppearance']).then((stored) => {
+      const value = stored.uiTheme;
+      if (themes.some((option) => option.id === value)) setTheme(value as ThemeName);
+      if (stored.uiAppearance === 'dark' || stored.uiAppearance === 'light') setThemeMode(stored.uiAppearance);
+      setThemeReady(true);
+    }).catch(() => setThemeReady(true));
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    if (themeReady) void browser.storage.local.set({ uiTheme: theme });
+  }, [theme, themeReady]);
+
+  useEffect(() => {
+    document.documentElement.dataset.appearance = themeMode;
+    if (themeReady) void browser.storage.local.set({ uiAppearance: themeMode });
+  }, [themeMode, themeReady]);
 
   /**
    * Check any response for NOT_UNLOCKED error.
@@ -116,9 +151,32 @@ function App() {
   };
 
   const handleDeleteDatabase = async () => {
+    if (!deletePassword) {
+      setDeleteError('Enter your master password');
+      return;
+    }
+    setDeletingDatabase(true);
+    setDeleteError('');
+    try {
+      const res = await sendMessage({ type: 'DELETE_DATABASE', payload: { password: deletePassword } });
+      if (!res.success) {
+        if (handleSessionLost(res)) return;
+        setDeletePassword('');
+        setDeleteError('Wrong password. Try again.');
+        return;
+      }
+      setShowDeleteConfirm(false);
+      setDeletePassword('');
+      await refreshState();
+    } finally {
+      setDeletingDatabase(false);
+    }
+  };
+
+  const cancelDeleteDatabase = () => {
     setShowDeleteConfirm(false);
-    await sendMessage({ type: 'DELETE_DATABASE' });
-    await refreshState();
+    setDeletePassword('');
+    setDeleteError('');
   };
 
   const handleExportDatabase = async () => {
@@ -160,7 +218,7 @@ function App() {
   };
 
   const header = (
-    <div className="flex items-center justify-between px-4 py-3 bg-emerald-600 text-white">
+    <div className="theme-header flex items-center justify-between px-4 py-3 text-white">
       <div className="flex items-center gap-2">
         {page.name !== 'entry_list' &&
           page.name !== 'create_vault' &&
@@ -178,8 +236,24 @@ function App() {
         <h1 className="text-base font-semibold">KeePass</h1>
       </div>
       <div className="flex items-center gap-1">
+        <button type="button" onClick={() => setThemeMode((mode) => mode === 'light' ? 'dark' : 'light')} className="rounded-md border border-white/20 px-2 py-1 text-xs" aria-label={`Switch to ${themeMode === 'light' ? 'dark' : 'light'} theme`} title={`Switch to ${themeMode === 'light' ? 'dark' : 'light'} theme`}>{themeMode === 'light' ? 'Light' : 'Dark'}</button>
+        <div className="flex items-center gap-1 rounded-full bg-black/10 px-1.5 py-1" role="group" aria-label="Theme accent color">
+          {themes.map((option) => <button key={option.id} type="button" onClick={() => setTheme(option.id)} aria-label={`${option.label} theme`} aria-pressed={theme === option.id} title={option.label} className={`h-3.5 w-3.5 rounded-full transition-transform hover:scale-125 ${theme === option.id ? 'ring-2 ring-white ring-offset-1 ring-offset-transparent' : ''}`} style={{ backgroundColor: option.color }} />)}
+        </div>
         {appState?.status === 'unlocked' && (
           <>
+            {page.name === 'entry_list' && (
+              <button
+                onClick={() => setPage({ name: 'entry_form' })}
+                className="hover:bg-emerald-700 rounded p-1.5 transition-colors"
+                title="Add Entry"
+                aria-label="Add entry"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+              </button>
+            )}
             <button
               onClick={() => setPage({ name: 'generator' })}
               className="hover:bg-emerald-700 rounded p-1.5 transition-colors"
@@ -243,6 +317,7 @@ function App() {
         return (
           <EntryList
             onSelect={(entry) => setPage({ name: 'entry_detail', entry })}
+            onEdit={(entry) => setPage({ name: 'entry_form', entry })}
             onAdd={() => setPage({ name: 'entry_form' })}
             onSessionLost={handleSessionLost}
           />
@@ -276,9 +351,9 @@ function App() {
   };
 
   return (
-    <div className="w-full min-h-[500px] bg-gray-50 flex flex-col">
+    <div data-theme={theme} data-appearance={themeMode} className="theme-shell w-full min-h-[500px] flex flex-col">
       {header}
-      <div className="flex-1 overflow-y-auto">{renderPage()}</div>
+      <div className="theme-content flex-1 overflow-y-auto">{renderPage()}</div>
 
       {/* Delete confirmation modal */}
       {showDeleteConfirm && (
@@ -293,20 +368,27 @@ function App() {
               <h3 className="text-lg font-semibold text-gray-900">Delete Database?</h3>
             </div>
             <p className="text-sm text-gray-600 mb-4">
-              This will permanently delete all your passwords. This action cannot be undone.
+              This will permanently delete all your passwords. This action cannot be undone. Enter your master password to continue.
             </p>
-            <div className="flex gap-2">
+            <div onKeyDown={(event) => event.key === 'Enter' && handleDeleteDatabase()}>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Master Password</label>
+              <PasswordInput value={deletePassword} onChange={setDeletePassword} placeholder="Enter master password" autoFocus />
+            </div>
+            {deleteError && <div className="text-red-600 text-sm bg-red-50 px-3 py-2 rounded-lg mt-3">{deleteError}</div>}
+            <div className="flex gap-2 mt-4">
               <button
-                onClick={() => setShowDeleteConfirm(false)}
-                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                onClick={cancelDeleteDatabase}
+                disabled={deletingDatabase}
+                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleDeleteDatabase}
-                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+                disabled={deletingDatabase || !deletePassword}
+                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
               >
-                Delete
+                {deletingDatabase ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>

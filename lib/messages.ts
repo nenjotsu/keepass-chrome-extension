@@ -1,4 +1,4 @@
-import type { AppState, EntryData, GroupData, GeneratorOptions } from './types';
+import type { AppState, EntryData, GroupData, GeneratorOptions, SaveMatchData, PendingCredentialData } from './types';
 
 // ── Request types ──────────────────────────────────────────────
 
@@ -6,20 +6,26 @@ export type MessageRequest =
   | { type: 'GET_STATE' }
   | { type: 'CREATE_DATABASE'; payload: { name: string; password: string } }
   | { type: 'IMPORT_DATABASE'; payload: { data: number[]; password: string } }
-  | { type: 'UNLOCK'; payload: { password: string } }
+  | { type: 'UNLOCK'; payload: { password: string; rememberDurationMs: number } }
   | { type: 'LOCK' }
+  | { type: 'SESSION_ACTIVITY' }
   | { type: 'GET_ENTRIES'; payload?: { groupId?: string; search?: string } }
+  | { type: 'GET_RECENT_ENTRY_IDS' }
   | { type: 'GET_ENTRY'; payload: { id: string } }
   | { type: 'CREATE_ENTRY'; payload: { entry: Omit<EntryData, 'id' | 'created' | 'modified'> } }
   | { type: 'UPDATE_ENTRY'; payload: { entry: EntryData } }
-  | { type: 'DELETE_ENTRY'; payload: { id: string } }
+  | { type: 'DELETE_ENTRY'; payload: { id: string; password: string } }
   | { type: 'GET_GROUPS' }
   | { type: 'GENERATE_PASSWORD'; payload?: Partial<GeneratorOptions> }
-  | { type: 'COPY_TO_CLIPBOARD'; payload: { text: string } }
+  | { type: 'COPY_TO_CLIPBOARD'; payload: { text: string; entryId?: string } }
   | { type: 'EXPORT_DATABASE' }
-  | { type: 'DELETE_DATABASE' }
+  | { type: 'DELETE_DATABASE'; payload: { password: string } }
   | { type: 'GET_ENTRIES_FOR_URL'; payload: { url: string } }
-  | { type: 'FILL_IN_TAB'; payload: { tabId: number; username: string; password: string } }
+  | { type: 'GET_SAVE_CREDENTIAL_MATCH'; payload: { url: string; username: string } }
+  | { type: 'UPDATE_ENTRY_PASSWORD'; payload: { id: string; title: string; url: string; username: string; password: string } }
+  | { type: 'STORE_PENDING_CREDENTIALS'; payload: PendingCredentialData }
+  | { type: 'TAKE_PENDING_CREDENTIALS' }
+  | { type: 'FILL_IN_TAB'; payload: { tabId: number; entryId: string } }
   | { type: 'GET_BACKUP_HISTORY'; payload?: { limit?: number } }
   | { type: 'RESTORE_FROM_BACKUP'; payload: { timestamp: number; password: string } }
   | { type: 'GET_STORAGE_HEALTH' }
@@ -37,6 +43,8 @@ export type StateResponse = MessageResponse<AppState>;
 export type EntriesResponse = MessageResponse<EntryData[]>;
 
 export type EntryResponse = MessageResponse<EntryData>;
+export type SaveMatchResponse = MessageResponse<SaveMatchData | null>;
+export type PendingCredentialResponse = MessageResponse<PendingCredentialData | null>;
 
 export type GroupsResponse = MessageResponse<GroupData[]>;
 
@@ -77,6 +85,9 @@ export type RecoveryStatusResponse = MessageResponse<{
 
 /** Error code returned when the service worker restarted and DB is no longer in memory */
 export const NOT_UNLOCKED_ERROR = 'NOT_UNLOCKED';
+
+/** Error code returned when an action requiring fresh password verification fails. */
+export const INVALID_MASTER_PASSWORD_ERROR = 'INVALID_MASTER_PASSWORD';
 
 /** Check if a response indicates the database was locked (e.g. service worker restart) */
 export function isNotUnlockedError(res: MessageResponse): boolean {

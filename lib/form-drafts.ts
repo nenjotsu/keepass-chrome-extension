@@ -1,3 +1,9 @@
+import {
+  DEFAULT_REMEMBER_UNLOCK_MS,
+  REMEMBER_UNLOCK_OPTIONS,
+  STORAGE_KEY_REMEMBER_UNLOCK_PREFERENCE,
+} from './constants';
+
 /**
  * Form draft persistence for popup context.
  * Saves form fields to chrome.storage.session so they survive popup close.
@@ -51,24 +57,28 @@ export async function clearCreateVaultDraft(): Promise<void> {
 
 // ── Unlock ─────────────────────────────────────────────────────
 
-export async function loadUnlockDraft(): Promise<string | null> {
+export async function loadRememberUnlockDuration(): Promise<number> {
   try {
-    const r = await browser.storage.session.get(KEY_UNLOCK);
-    const p = r[KEY_UNLOCK];
-    return typeof p === 'string' ? p : null;
+    const r = await browser.storage.local.get(STORAGE_KEY_REMEMBER_UNLOCK_PREFERENCE);
+    const duration = r[STORAGE_KEY_REMEMBER_UNLOCK_PREFERENCE];
+    return typeof duration === 'number' && REMEMBER_UNLOCK_OPTIONS.some((o) => o.value === duration)
+      ? duration
+      : DEFAULT_REMEMBER_UNLOCK_MS;
   } catch {
-    return null;
+    return DEFAULT_REMEMBER_UNLOCK_MS;
   }
 }
 
-export async function saveUnlockDraft(password: string): Promise<void> {
+export async function saveRememberUnlockDuration(durationMs: number): Promise<void> {
+  if (!REMEMBER_UNLOCK_OPTIONS.some((option) => option.value === durationMs)) return;
   try {
-    await browser.storage.session.set({ [KEY_UNLOCK]: password });
+    await browser.storage.local.set({ [STORAGE_KEY_REMEMBER_UNLOCK_PREFERENCE]: durationMs });
   } catch {
     // ignore
   }
 }
 
+/** Remove the legacy password draft without touching the remember preference. */
 export async function clearUnlockDraft(): Promise<void> {
   try {
     await browser.storage.session.remove(KEY_UNLOCK);
@@ -86,6 +96,8 @@ export interface EntryFormDraft {
   url: string;
   notes: string;
   tags: string;
+  autoFill: boolean;
+  autoLogin: boolean;
 }
 
 function entryFormKey(entryId?: string): string {
@@ -105,6 +117,8 @@ export async function loadEntryFormDraft(entryId?: string): Promise<EntryFormDra
       url: String(d.url ?? ''),
       notes: String(d.notes ?? ''),
       tags: String(d.tags ?? ''),
+      autoFill: d.autoFill !== false,
+      autoLogin: d.autoLogin === true,
     };
   } catch {
     return null;

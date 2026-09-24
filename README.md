@@ -9,19 +9,29 @@ KeePass-compatible password manager as a Chrome extension. Runs entirely in the 
 - **Create and open `.kdbx` databases** — full KeePass 2.x compatibility
 - **Import/export** — open existing KeePass database or create a new one
 - **Password management** — add, edit, delete entries; fill in URL for autofill on sites
-- **Search** — quick search by title, login, URL and tags
+- **Entry views** — switch between relevant entries for the current site, all items, favorites, and recent entries
+- **Favorites and recents** — mark important entries as favorites; keep the 20 most recently copied or filled entries at hand
+- **Search** — quick search by title, login, URL and tags within the selected entry view
 - **Password generator** — configurable generator with strength meter
-- **Autofill** — open the extension on a login page to see matching entries and click Fill
+- **Click-to-fill** — fills a login form only after you click the KeePass control or choose an entry in the popup
+- **Save after sign-in or signup** — offers to add or update a vault record after a password form is submitted
+- **Light and dark appearance** — light is the default; switch modes from the header and choose a green, blue, purple, or pink accent
+- **Soft interface styling** — translucent one-pixel borders, subtle surfaces, and quiet entry-row hover effects
 - **Copy to clipboard** — with auto-clear after 15 seconds
-- **Auto-lock** — database locks automatically after 15 minutes of inactivity
+- **Configurable auto-lock** — locks after 15 minutes by default, with optional Remember Unlock durations of 1 hour, 8 hours, 1 day, or 1 week
 
 ## Security
 
-- Master password is **never stored** — used only to derive the encryption key
+- Master password is not stored by default. If you opt into Remember Unlock, it is held in browser session storage until the selected time expires, you manually lock or replace/delete the vault, or the browser exits
+- Form drafts restore non-secret fields only; master passwords and entry passwords are not stored as drafts
 - Database stored encrypted (AES-256 / ChaCha20) in `.kdbx` format
 - Encryption key exists in memory only while the database is unlocked
-- Fill is triggered only when you click — scripts run on user action
+- Autofill uses exact-domain matches, requires a user click, and can be disabled per entry
+- Filling credentials never submits the website's form
+- After you submit a password sign-in or signup form, pending credentials remain in local memory until you save or dismiss the offer; a short-lived in-memory handoff supports full-page navigation
+- Credentials are added or updated only after you choose **Save** or **Update**. If the vault is locked or unavailable, pending values are discarded
 - Clipboard is automatically cleared after copying a password
+- Entry and database deletion require fresh master-password verification; the re-entered password is not stored or logged
 
 ## Installation
 
@@ -34,7 +44,7 @@ KeePass-compatible password manager as a Chrome extension. Runs entirely in the 
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/keepass-chrome-extension.git
+git clone https://github.com/nenjotsu/keepass-chrome-extension.git
 cd keepass-chrome-extension
 
 # Install dependencies
@@ -79,15 +89,31 @@ With `npm run dev`, the extension with hot reload will be in `.output/chrome-mv3
 2. Choose **Create New** to create a new database or **Import File** to open an existing `.kdbx` file
 3. Set a master password (at least 8 characters)
 
+### Remember Unlock
+
+On the Unlock screen, choose **Don't remember** or opt into **1 hour**, **8 hours**, **1 day**, or **1 week**. The selected time is an inactivity timeout: using the extension resets the timer, while passive page matching does not. Your last choice is preselected the next time you unlock.
+
+With Remember Unlock enabled, the extension temporarily keeps your master password in browser session storage so it can reopen the vault after its background service worker restarts. The password is saved only after a successful unlock, and is cleared when the timeout expires, you manually lock the vault, import or delete a vault, or close Chrome. **Don't remember** is the default; it keeps the existing 15-minute in-memory unlock, but a service worker restart may require you to enter the master password again.
+
 ### Password management
 
 - **Add entry** — "Add Entry" button at the bottom of the list
 - **View** — click an entry in the list
 - **Edit** — "Edit" button on the entry page
-- **Delete** — "Delete" (with confirmation)
+- **Favorite** — use the star button on the entry page to add or remove an entry from Favorites
+- **Delete** — choose "Delete," then enter the master password in the destructive-action dialog. An incorrect password leaves the entry unchanged and allows another attempt.
 - **Copy** — copy icon next to login, password, and URL fields
 
 The popup always restores the last page and form drafts when reopened. You can close it to copy from elsewhere — your data will be there when you reopen.
+
+The entry list has four views:
+
+- **All relevant** — entries whose saved hostname exactly matches the active browser tab; selecting one fills the login form directly
+- **All items** — every vault entry
+- **Favorites** — starred entries, in vault order
+- **Recents** — up to 20 distinct entries, ordered by most recently copied or filled
+
+If there are no relevant entries for the current site, the popup starts on **All items**. Searches narrow the currently selected view.
 
 ### Password generator
 
@@ -102,21 +128,38 @@ Available via the key icon in the header or when creating/editing an entry (refr
 
 **Fill in the URL field** when creating or editing an entry — this is required for autofill. Enter just the hostname (e.g. `italki.com` or `mail.example.com`); no `https://` needed.
 
-When you visit a login page with a matching password entry:
+When you visit a login page with a matching entry that has **Allow Auto Fill** enabled:
 
-1. The extension automatically detects the password field
-2. A **KeePass logo** (green square with lock icon) appears directly on the password field
-3. Click the icon to autofill username and password
-4. The popup is not required to be open for this to work
+1. The extension waits for a visible password field and finds entries matching the exact hostname. It does not put credentials into the page automatically.
+2. Click the **KeePass logo** beside the password field to fill the first match, or open the popup, choose the entry you want, and click **Fill**.
+3. Filling never submits the login form; review the page and submit it yourself.
 
-Alternatively, you can open the extension popup while on a login page. If you have a matching entry, you'll see "On this page" with a **Fill** button.
+Each entry has an **Allow Auto Fill** checkbox, enabled by default. Turn it off to exclude that entry from matching and fill suggestions. **Remember Unlock** is a separate opt-in on the unlock screen; its selected duration controls how long the master password remains available for automatic re-unlock.
+
+You can also open the extension popup on a matching page and select an entry from **All relevant** to fill it directly. Entries with Auto Fill disabled are not offered for filling.
+
+### Save passwords from websites
+
+After you submit a password-based sign-in or signup form, KeePass offers to save the submitted username and password when the page navigates or the form disappears. If the site gives no clear signal, it shows an offer after five seconds and marks the result as unconfirmed. Password-change forms are ignored.
+
+Review the title, website, username, and password in the on-page prompt before choosing **Save**. New records go to the root group by default; you can select another group. A new record enables **Allow Auto Fill** and leaves **Auto Login** off. If the same exact hostname and username already exist, the prompt offers **Update**; it keeps other entry details unless you edit them in the prompt. **Never** dismisses only that offer.
+
+The prompt is available only while the vault is unlocked. If the vault is locked or unavailable, pending credentials are discarded. Credentials are kept in memory briefly across a full-page navigation and are never sent to a remote service.
+
+### Delete a database
+
+Use the trash icon in the header, then enter the master password in the deletion dialog. The database is removed only after successful verification; canceling or entering a wrong password leaves it intact.
+
+### Appearance
+
+Use the Light/Dark control in the header to switch appearance; light is the default. Use the four color swatches to choose green, blue, purple, or pink accents. Both settings persist between popup sessions.
 
 ## Project structure
 
 ```
 ├── entrypoints/
 │   ├── background.ts          # Service Worker — extension core
-│   ├── content.ts             # Content Script — detects login forms, shows icon
+│   ├── content.ts             # Content Script — detects login forms and offers click-to-fill
 │   └── popup/                 # Popup UI (React)
 │       ├── App.tsx            # Page routing
 │       ├── pages/             # CreateVault, Unlock, EntryList,
@@ -124,6 +167,7 @@ Alternatively, you can open the extension popup while on a login page. If you ha
 │       └── components/        # PasswordInput, CopyButton, StrengthMeter
 ├── lib/
 │   ├── kdbx.ts                # kdbxweb wrapper — .kdbx database handling
+│   ├── page-autofill.ts       # Fills a login form after an explicit user action
 │   ├── crypto-setup.ts        # Argon2 (hash-wasm) init for kdbxweb
 │   ├── storage.ts             # chrome.storage.local / session persistence
 │   ├── messages.ts            # Typed messaging API
@@ -167,7 +211,7 @@ graph TB
         end
         subgraph storage [Chrome Storage]
             Local["chrome.storage.local<br/>Encrypted .kdbx blob + metadata"]
-            Session["chrome.storage.session<br/>Master password (temporary)"]
+            Session["chrome.storage.session<br/>Opt-in master password (temporary)"]
         end
         Page["Web Page DOM"]
     end
@@ -196,16 +240,16 @@ Typed messages in `lib/messages.ts`: GET_STATE, CREATE_DATABASE, IMPORT_DATABASE
 ### Security
 
 - **Encryption**: Argon2 KDF → AES-256-CBC / ChaCha20, ProtectedValue for fields
-- **Session**: master password in `chrome.storage.session` (cleared on browser quit)
-- **Auto-lock**: 15 min via `chrome.alarms`
+- **Session**: remembered master password only after explicit opt-in; cleared on browser quit, manual lock, vault replacement/deletion, or inactivity expiry
+- **Auto-lock**: 15 min by default; can be extended with the Unlock screen's Remember option
 - **Clipboard**: auto-clear 15 s after copy
 
 ### Storage
 
 | Layer | Contents | Lifetime |
 |---|---|---|
-| chrome.storage.local | Encrypted .kdbx blob, metadata | Persistent until uninstall |
-| chrome.storage.session | Master password | Until browser quit |
+| chrome.storage.local | Encrypted .kdbx blob, metadata, Remember Unlock duration preference | Persistent until uninstall |
+| chrome.storage.session | Optional remembered master password and temporary form drafts | Until browser quit; remembered unlock also expires after the chosen inactivity period |
 | In-memory | Decrypted Kdbx | Until lock / SW termination |
 
 ## License

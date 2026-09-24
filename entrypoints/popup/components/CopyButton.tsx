@@ -2,9 +2,10 @@ import { useState } from 'react';
 
 interface Props {
   text: string;
+  entryId?: string;
 }
 
-export function CopyButton({ text }: Props) {
+export function CopyButton({ text, entryId }: Props) {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState(false);
 
@@ -23,7 +24,7 @@ export function CopyButton({ text }: Props) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
       // Schedule clipboard clear (background handles alarm)
-      browser.runtime.sendMessage({ type: 'COPY_TO_CLIPBOARD', payload: { text } }).catch(() => {});
+      browser.runtime.sendMessage({ type: 'COPY_TO_CLIPBOARD', payload: { text, entryId } }).catch(() => {});
     } catch {
       setError(true);
     }

@@ -29,7 +29,7 @@
 <body>
 
 <h1>Privacy Policy</h1>
-<p class="updated">Last updated: February 7, 2026</p>
+<p class="updated">Last updated: September 24, 2026</p>
 
 <h2>Overview</h2>
 <p>
@@ -40,13 +40,14 @@
 </p>
 
 <h2>Data Collection</h2>
-<p>This extension does <strong>not</strong> collect, transmit, or share any personal data. Specifically:</p>
+<p>This extension does <strong>not</strong> collect, transmit, or share your personal data with us or any third party. Specifically:</p>
 <ul>
   <li>No analytics or telemetry of any kind.</li>
   <li>No cookies or tracking pixels.</li>
   <li>No network requests to external servers.</li>
   <li>No crash reports sent anywhere.</li>
 </ul>
+<p>After you submit a password-based sign-in or signup form, the extension may temporarily read the username and password to offer to save them. Pending values stay in page memory, with a short-lived in-memory handoff through the extension's local background process if the page navigates before the prompt appears. The extension uses them to check for a matching vault record and saves them only after you choose Save/Update. If the vault is locked or unavailable, pending values are discarded. No credentials are sent to a remote service.</p>
 
 <h2>Data Storage</h2>
 <p>All data is stored locally within your browser using Chrome Storage APIs:</p>
@@ -57,9 +58,10 @@
     persists across browser restarts and is only removed when you uninstall the extension.
   </li>
   <li>
-    <strong>chrome.storage.session</strong> — stores the master password temporarily
-    so the extension can re-open the database after a background service restart.
-    This data is automatically <strong>cleared when you close the browser</strong>.
+    <strong>chrome.storage.session</strong> — stores the master password only if you
+    opt into Remember Unlock. It lets the extension re-open the database after a
+    background service restart and is cleared on inactivity expiry, manual lock,
+    vault replacement/deletion, or when you close the browser.
   </li>
 </ul>
 
@@ -67,18 +69,20 @@
 <p>
   Your password database is encrypted using the industry-standard KeePass <code>.kdbx</code>
   format with AES-256-CBC or ChaCha20 cipher and Argon2 key derivation. The master
-  password is never stored in plaintext on disk — it exists only in volatile session
-  storage while the browser is running.
+  password is not stored by default. If you opt into Remember Unlock, it is held
+  temporarily in browser session storage, never persistent storage, for the selected
+  inactivity period.
 </p>
 
 <h2>Permissions</h2>
 <p>The extension requests the following browser permissions:</p>
 <ul>
   <li><strong>storage</strong> — to save the encrypted database locally.</li>
-  <li><strong>alarms</strong> — auto-lock (15 min) and clipboard auto-clear.</li>
+  <li><strong>alarms</strong> — auto-lock (15 minutes by default, configurable through Remember Unlock) and clipboard auto-clear.</li>
   <li><strong>activeTab</strong> — to fill passwords when you open the extension on a login page.</li>
   <li><strong>scripting</strong> — to fill fields into the current page when you click Fill.</li>
   <li><strong>clipboardWrite</strong> (optional) — to copy passwords; requested when you first copy.</li>
+  <li><strong>Website access</strong> — to detect password forms, offer to save credentials after submission, and fill matching entries.</li>
 </ul>
 
 <h2>Third-Party Services</h2>

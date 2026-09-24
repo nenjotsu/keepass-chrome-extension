@@ -1,6 +1,11 @@
 import type { MessageRequest, MessageResponse, StateResponse, EntriesResponse, EntryResponse, GroupsResponse, GeneratePasswordResponse, ExportResponse, BackupHistoryResponse, StorageHealthResponse, RecoveryStatusResponse } from '@/lib/messages';
-import type { AppState } from '@/lib/types';
-import { ALARM_AUTO_LOCK, ALARM_CLIPBOARD_CLEAR, DEFAULT_LOCK_TIMEOUT_MINUTES } from '@/lib/constants';
+import type { AppState, PendingCredentialData } from '@/lib/types';
+import {
+  ALARM_AUTO_LOCK,
+  ALARM_CLIPBOARD_CLEAR,
+  DEFAULT_LOCK_TIMEOUT_MINUTES,
+  REMEMBER_UNLOCK_OPTIONS,
+} from '@/lib/constants';
 import { initCryptoEngine } from '@/lib/crypto-setup';
 import * as kdbx from '@/lib/kdbx';
 import * as storage from '@/lib/storage';
@@ -13,12 +18,33 @@ import { clearClipboard } from '@/lib/clipboard';
 
 /** Error code sent when the database is not unlocked (e.g. service worker restarted) */
 const NOT_UNLOCKED_ERROR = 'NOT_UNLOCKED';
+const RECENT_ENTRY_IDS_KEY = 'recent_entry_ids';
+const MAX_RECENT_ENTRIES = 20;
+
+let unlockDurationMs: number | null = null;
+let unlockExpiresAt = 0;
+const pendingNavigationCredentials = new Map<number, { credentials: PendingCredentialData; expiresAt: number }>();
+
+async function recordRecentEntry(entryId: string | undefined): Promise<void> {
+  if (!entryId) return;
+  const stored = await browser.storage.local.get(RECENT_ENTRY_IDS_KEY);
+  const rawRecentIds = stored[RECENT_ENTRY_IDS_KEY];
+  const existing: string[] = Array.isArray(rawRecentIds)
+    ? rawRecentIds.filter((id: unknown): id is string => typeof id === 'string')
+    : [];
+  await browser.storage.local.set({
+    [RECENT_ENTRY_IDS_KEY]: [entryId, ...existing.filter((id) => id !== entryId)].slice(0, MAX_RECENT_ENTRIES),
+  });
+}
 
 
 // ── Storage Systems Initialization ─────────────────────────────
 
 async function initializeStorageSystems(): Promise<void> {
   try {
+    // Remove plaintext drafts created by older versions, without clearing an
+    // explicitly remembered unlock for the current browser session.
+    await storage.clearLegacyUnlockMaterial();
     // Initialize all storage layers (local, IndexedDB, etc.)
     await storage.initializeAllStorageSystems();
 
@@ -72,16 +98,85 @@ export default defineBackground(() => {
     return { status: 'no_database' };
   }
 
-  /** Guard: ensure database is unlocked before data operations */
-  async function requireUnlocked(): Promise<MessageResponse | null> {
-    if (kdbx.isUnlocked()) return null;
-    return { success: false, error: NOT_UNLOCKED_ERROR };
+  function scheduleAutoLock(expiresAt: number): void {
+    const remainingMs = expiresAt - Date.now();
+    if (remainingMs <= 0) {
+      void lockDatabase();
+      return;
+    }
+    browser.alarms.create(ALARM_AUTO_LOCK, {
+      delayInMinutes: Math.max(0.5, remainingMs / 60_000),
+    });
   }
 
   function resetAutoLockTimer(): void {
-    browser.alarms.create(ALARM_AUTO_LOCK, {
-      delayInMinutes: DEFAULT_LOCK_TIMEOUT_MINUTES,
-    });
+    unlockExpiresAt = Date.now() + (unlockDurationMs ?? DEFAULT_LOCK_TIMEOUT_MINUTES * 60_000);
+    scheduleAutoLock(unlockExpiresAt);
+  }
+
+  async function recordUserActivity(): Promise<void> {
+    if (!kdbx.isUnlocked()) return;
+    if (unlockDurationMs !== null) {
+      const updatedExpiry = await storage.extendRememberedUnlock(unlockDurationMs);
+      if (updatedExpiry === null) {
+        unlockDurationMs = null;
+        await storage.clearRememberedUnlock();
+      } else {
+        unlockExpiresAt = updatedExpiry;
+        scheduleAutoLock(unlockExpiresAt);
+        return;
+      }
+    }
+    resetAutoLockTimer();
+  }
+
+  async function lockDatabase(): Promise<void> {
+    kdbx.closeDatabase();
+    pendingNavigationCredentials.clear();
+    unlockDurationMs = null;
+    unlockExpiresAt = 0;
+    await storage.clearSessionSecrets();
+    await browser.alarms.clear(ALARM_AUTO_LOCK);
+  }
+
+  /** Reopen the vault after a service-worker restart only when opted in. */
+  async function ensureDatabaseUnlocked(): Promise<boolean> {
+    if (kdbx.isUnlocked()) {
+      if (unlockExpiresAt > 0 && unlockExpiresAt <= Date.now()) {
+        await lockDatabase();
+        return false;
+      }
+      return true;
+    }
+
+    const remembered = await storage.loadRememberedUnlock();
+    if (!remembered) return false;
+    const dbData = await persistentStorage.loadDatabase();
+    if (!dbData) {
+      await storage.clearSessionSecrets();
+      return false;
+    }
+
+    try {
+      await kdbx.openDatabase(dbData.blob, remembered.password);
+      unlockDurationMs = remembered.durationMs;
+      unlockExpiresAt = remembered.expiresAt;
+      scheduleAutoLock(unlockExpiresAt);
+      return true;
+    } catch (err) {
+      console.warn('[Background] Remembered unlock could not open the current vault; clearing it.', err);
+      await lockDatabase();
+      return false;
+    }
+  }
+
+  /** Guard: ensure database is unlocked before data operations */
+  async function requireUnlocked(): Promise<MessageResponse | null> {
+    if (!(await ensureDatabaseUnlocked())) {
+      return { success: false, error: NOT_UNLOCKED_ERROR };
+    }
+    await recordUserActivity();
+    return null;
   }
 
   /** Save current database state to persistent storage */
@@ -120,8 +215,20 @@ export default defineBackground(() => {
 
   browser.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === ALARM_AUTO_LOCK) {
-      kdbx.closeDatabase();
-      storage.clearSessionSecrets();
+      void (async () => {
+        if (kdbx.isUnlocked() && unlockExpiresAt > Date.now()) {
+          scheduleAutoLock(unlockExpiresAt);
+          return;
+        }
+        if (!kdbx.isUnlocked()) {
+          const remembered = await storage.loadRememberedUnlock();
+          if (remembered) {
+            scheduleAutoLock(remembered.expiresAt);
+            return;
+          }
+        }
+        await lockDatabase();
+      })();
     }
     if (alarm.name === ALARM_CLIPBOARD_CLEAR) {
       clearClipboard();
@@ -130,14 +237,14 @@ export default defineBackground(() => {
 
   // ── Message handler ────────────────────────────────────────
 
-  browser.runtime.onMessage.addListener((message: MessageRequest) =>
-    handleMessage(message).catch((err): MessageResponse => {
+  browser.runtime.onMessage.addListener((message: MessageRequest, sender) =>
+    handleMessage(message, sender).catch((err): MessageResponse => {
       console.error('Message handler error:', err);
       return { success: false, error: String(err) };
     }),
   );
 
-  async function handleMessage(msg: MessageRequest): Promise<MessageResponse> {
+  async function handleMessage(msg: MessageRequest, sender?: { tab?: { id?: number } }): Promise<MessageResponse> {
     try {
       // Ensure storage is initialized before processing messages
       if (storageInitialized) {
@@ -146,6 +253,7 @@ export default defineBackground(() => {
 
       switch (msg.type) {
         case 'GET_STATE': {
+          if (await ensureDatabaseUnlocked()) await recordUserActivity();
           const state = await getAppState();
           return { success: true, data: state } as StateResponse;
         }
@@ -154,6 +262,8 @@ export default defineBackground(() => {
           const op = await stateJournal.beginOperation('create_database', msg.payload);
           try {
             const { name, password } = msg.payload;
+            await storage.clearSessionSecrets();
+            unlockDurationMs = null;
             await kdbx.createDatabase(name, password);
             await persistDatabase();
 
@@ -193,6 +303,8 @@ export default defineBackground(() => {
               }
               throw err;
             }
+            await storage.clearSessionSecrets();
+            unlockDurationMs = null;
             await persistDatabase();
 
             // Initialize recovery codes for imported database
@@ -231,7 +343,16 @@ export default defineBackground(() => {
               }
               throw err;
             }
-
+            const selectedDuration = REMEMBER_UNLOCK_OPTIONS.some(
+              (option) => option.value === msg.payload.rememberDurationMs && option.value > 0,
+            ) ? msg.payload.rememberDurationMs : 0;
+            if (selectedDuration > 0) {
+              await storage.rememberUnlock(msg.payload.password, selectedDuration);
+              unlockDurationMs = selectedDuration;
+            } else {
+              await storage.clearRememberedUnlock();
+              unlockDurationMs = null;
+            }
             resetAutoLockTimer();
             await stateJournal.completeOperation(op, '');
 
@@ -243,16 +364,18 @@ export default defineBackground(() => {
         }
 
         case 'LOCK': {
-          kdbx.closeDatabase();
-          await storage.clearSessionSecrets();
-          browser.alarms.clear(ALARM_AUTO_LOCK);
+          await lockDatabase();
+          return { success: true, data: null };
+        }
+
+        case 'SESSION_ACTIVITY': {
+          if (await ensureDatabaseUnlocked()) await recordUserActivity();
           return { success: true, data: null };
         }
 
         case 'GET_ENTRIES': {
           const guard = await requireUnlocked();
           if (guard) return guard;
-          resetAutoLockTimer();
           const entries = kdbx.getEntries(
             msg.payload?.groupId,
             msg.payload?.search,
@@ -260,10 +383,25 @@ export default defineBackground(() => {
           return { success: true, data: entries } as EntriesResponse;
         }
 
+        case 'GET_RECENT_ENTRY_IDS': {
+          const guard = await requireUnlocked();
+          if (guard) return guard;
+          const stored = await browser.storage.local.get(RECENT_ENTRY_IDS_KEY);
+          const rawRecentIds = stored[RECENT_ENTRY_IDS_KEY];
+          const ids: string[] = Array.isArray(rawRecentIds)
+            ? rawRecentIds.filter((id: unknown): id is string => typeof id === 'string')
+            : [];
+          const availableIds = new Set(kdbx.getEntries().map((entry) => entry.id));
+          const currentIds = ids.filter((id) => availableIds.has(id));
+          if (currentIds.length !== ids.length) {
+            await browser.storage.local.set({ [RECENT_ENTRY_IDS_KEY]: currentIds });
+          }
+          return { success: true, data: currentIds };
+        }
+
         case 'GET_ENTRY': {
           const guard = await requireUnlocked();
           if (guard) return guard;
-          resetAutoLockTimer();
           const entry = kdbx.getEntry(msg.payload.id);
           if (!entry) return { success: false, error: 'Entry not found' };
           return { success: true, data: entry } as EntryResponse;
@@ -272,7 +410,6 @@ export default defineBackground(() => {
         case 'CREATE_ENTRY': {
           const guard = await requireUnlocked();
           if (guard) return guard;
-          resetAutoLockTimer();
           const created = kdbx.createEntry(msg.payload.entry);
           await persistDatabase();
           return { success: true, data: created } as EntryResponse;
@@ -281,17 +418,32 @@ export default defineBackground(() => {
         case 'UPDATE_ENTRY': {
           const guard = await requireUnlocked();
           if (guard) return guard;
-          resetAutoLockTimer();
           const updated = kdbx.updateEntry(msg.payload.entry);
           if (!updated) return { success: false, error: 'Entry not found' };
           await persistDatabase();
           return { success: true, data: updated } as EntryResponse;
         }
 
+        case 'UPDATE_ENTRY_PASSWORD': {
+          const guard = await requireUnlocked();
+          if (guard) return guard;
+          const updated = kdbx.updateEntryCredentials(msg.payload.id, {
+            title: msg.payload.title,
+            url: msg.payload.url,
+            username: msg.payload.username,
+            password: msg.payload.password,
+          });
+          if (!updated) return { success: false, error: 'Entry not found' };
+          await persistDatabase();
+          return { success: true, data: null };
+        }
+
         case 'DELETE_ENTRY': {
           const guard = await requireUnlocked();
           if (guard) return guard;
-          resetAutoLockTimer();
+          if (!(await recoverySystem.verifyPassword(msg.payload.password))) {
+            return { success: false, error: 'INVALID_MASTER_PASSWORD' };
+          }
           const deleted = kdbx.deleteEntry(msg.payload.id);
           if (!deleted) return { success: false, error: 'Entry not found' };
           await persistDatabase();
@@ -301,17 +453,19 @@ export default defineBackground(() => {
         case 'GET_GROUPS': {
           const guard = await requireUnlocked();
           if (guard) return guard;
-          resetAutoLockTimer();
           const groups = kdbx.getGroups();
           return { success: true, data: groups } as GroupsResponse;
         }
 
         case 'GENERATE_PASSWORD': {
+          if (await ensureDatabaseUnlocked()) await recordUserActivity();
           const pw = generatePassword(msg.payload);
           return { success: true, data: pw } as GeneratePasswordResponse;
         }
 
         case 'COPY_TO_CLIPBOARD': {
+          if (await ensureDatabaseUnlocked()) await recordUserActivity();
+          await recordRecentEntry(msg.payload.entryId);
           browser.alarms.create(ALARM_CLIPBOARD_CLEAR, {
             delayInMinutes: 15 / 60,
           });
@@ -319,9 +473,14 @@ export default defineBackground(() => {
         }
 
         case 'DELETE_DATABASE': {
+          const guard = await requireUnlocked();
+          if (guard) return guard;
+          if (!(await recoverySystem.verifyPassword(msg.payload.password))) {
+            return { success: false, error: 'INVALID_MASTER_PASSWORD' };
+          }
           const op = await stateJournal.beginOperation('delete_database', {});
           try {
-            kdbx.closeDatabase();
+            await lockDatabase();
 
             // Remove from both storage systems
             await persistentStorage.removeDatabaseCompletely();
@@ -331,12 +490,11 @@ export default defineBackground(() => {
             await recoverySystem.clearRecoveryCodes();
 
             // Clear tokens
-          await storage.clearSessionSecrets();
+            await storage.clearSessionSecrets();
 
             // Clear backup system state
             backupSystem.cleanup();
 
-            browser.alarms.clear(ALARM_AUTO_LOCK);
             await stateJournal.completeOperation(op, '');
             return { success: true, data: await getAppState() } as StateResponse;
           } catch (err) {
@@ -355,10 +513,46 @@ export default defineBackground(() => {
         }
 
         case 'GET_ENTRIES_FOR_URL': {
-          if (!kdbx.isUnlocked()) return { success: true, data: [] } as EntriesResponse;
-          resetAutoLockTimer();
+          if (!(await ensureDatabaseUnlocked())) return { success: true, data: [] } as EntriesResponse;
           const urlEntries = kdbx.getEntriesForUrl(msg.payload.url);
           return { success: true, data: urlEntries } as EntriesResponse;
+        }
+
+        case 'GET_SAVE_CREDENTIAL_MATCH': {
+          if (!(await ensureDatabaseUnlocked())) return { success: false, error: NOT_UNLOCKED_ERROR };
+          await recordUserActivity();
+          return { success: true, data: kdbx.findSaveMatch(msg.payload.url, msg.payload.username) };
+        }
+
+        case 'STORE_PENDING_CREDENTIALS': {
+          const tabId = sender?.tab?.id;
+          if (tabId === undefined || !(await ensureDatabaseUnlocked())) return { success: false, error: NOT_UNLOCKED_ERROR };
+          await recordUserActivity();
+          for (const [id, value] of pendingNavigationCredentials) {
+            if (value.expiresAt < Date.now()) pendingNavigationCredentials.delete(id);
+          }
+          if (pendingNavigationCredentials.size >= 20 && !pendingNavigationCredentials.has(tabId)) {
+            const oldestTabId = pendingNavigationCredentials.keys().next().value;
+            if (oldestTabId !== undefined) pendingNavigationCredentials.delete(oldestTabId);
+          }
+          const expiresAt = Date.now() + 10_000;
+          pendingNavigationCredentials.set(tabId, { credentials: msg.payload, expiresAt });
+          setTimeout(() => {
+            if (pendingNavigationCredentials.get(tabId)?.expiresAt === expiresAt) pendingNavigationCredentials.delete(tabId);
+          }, 10_000);
+          return { success: true, data: null };
+        }
+
+        case 'TAKE_PENDING_CREDENTIALS': {
+          const tabId = sender?.tab?.id;
+          if (tabId === undefined) return { success: true, data: null };
+          const pending = pendingNavigationCredentials.get(tabId);
+          pendingNavigationCredentials.delete(tabId);
+          if (!pending || pending.expiresAt < Date.now() || !(await ensureDatabaseUnlocked())) {
+            return { success: true, data: null };
+          }
+          await recordUserActivity();
+          return { success: true, data: pending.credentials };
         }
 
         case 'GET_ICON': {
@@ -383,7 +577,11 @@ export default defineBackground(() => {
         case 'FILL_IN_TAB': {
           const guard = await requireUnlocked();
           if (guard) return guard;
-          const { tabId, username, password } = msg.payload;
+          const { tabId, entryId } = msg.payload;
+          const entry = kdbx.getEntry(entryId);
+          if (!entry || entry.autoFill === false) {
+            return { success: false, error: 'This entry is not enabled for autofill.' };
+          }
           try {
             await browser.scripting.executeScript({
               target: { tabId },
@@ -402,14 +600,20 @@ export default defineBackground(() => {
                 if (pwFields.length === 0) return;
                 const field = pwFields[0];
                 const form = field.closest('form');
-                const userField = form?.querySelector<HTMLInputElement>(
-                  'input[type="text"], input[type="email"], input[name*="user"], input[name*="login"], input[name*="email"], input[autocomplete="username"]',
+                const root: ParentNode = form ?? document;
+                const candidates = root.querySelectorAll<HTMLInputElement>(
+                  'input[autocomplete="username"], input[name*="user" i], input[name*="login" i], input[name*="email" i], input[type="email"], input[type="text"]',
                 );
+                const userField = Array.from(candidates).find((input) => {
+                  const type = input.type.toLowerCase();
+                  return !input.disabled && !input.readOnly && type !== 'hidden' && type !== 'password';
+                });
                 if (userField) setNativeValue(userField, user);
                 setNativeValue(field, pass);
               },
-              args: [username, password],
+              args: [entry.username, entry.password],
             });
+            await recordRecentEntry(entryId);
             return { success: true, data: null };
           } catch (err) {
             return { success: false, error: String(err) };
@@ -419,7 +623,6 @@ export default defineBackground(() => {
         case 'GET_BACKUP_HISTORY': {
           const guard = await requireUnlocked();
           if (guard) return guard;
-          resetAutoLockTimer();
 
           const limit = msg.payload?.limit ?? 10;
           const backups = await backupSystem.getBackupHistory(limit);
@@ -445,6 +648,8 @@ export default defineBackground(() => {
             const blob = await persistentStorage.recoverDatabaseVersion(Date.parse(new Date(timestamp).toISOString()) / 1000);
 
             await kdbx.openDatabase(blob, password);
+            await storage.clearSessionSecrets();
+            unlockDurationMs = null;
             await persistDatabase();
             resetAutoLockTimer();
             await stateJournal.completeOperation(op, '');

@@ -2,7 +2,7 @@
 
 ## KeePass Password Manager Chrome Extension
 
-**Last Updated: February 2026**
+**Last Updated: September 24, 2026**
 
 ### Overview
 
@@ -10,12 +10,14 @@ The KeePass Password Manager extension is designed with privacy as the core prin
 
 ### Data Collection
 
-**We do NOT collect any personal data:**
+**We do not collect or transmit your personal data to us or any third party:**
 - No user tracking
 - No analytics
 - No telemetry
 - No crash reporting to remote servers
 - No network requests to external services
+
+When you submit a password-based sign-in or signup form, the extension may temporarily read the username and password from that form to offer to save them. Pending values stay in page memory, with a short-lived in-memory handoff through the extension's local background process if the page navigates before the prompt can appear. The extension uses them to check for a matching vault record and stores them in the vault only after you choose Save/Update. If the vault is locked or unavailable, the pending values are discarded. Nothing is transmitted to a remote service.
 
 ### Data Storage
 
@@ -24,6 +26,7 @@ All your passwords and database information are stored **locally** on your devic
 1. **Chrome Storage (chrome.storage.local)**
    - Encrypted KeePass database (.kdbx)
    - Database metadata
+   - Non-secret Remember Unlock duration preference
    - Persists across browser restarts
 
 2. **IndexedDB Database**
@@ -34,12 +37,12 @@ All your passwords and database information are stored **locally** on your devic
    - Operation journal
 
 3. **Session Storage (chrome.storage.session)**
-   - Encrypted auto-unlock tokens
-   - Cleared when browser exits
+   - The master password only when you opt into Remember Unlock
+   - Cleared on inactivity expiry, manual lock, vault replacement/deletion, or browser exit
 
 ### Encryption
 
-- Master password is never stored in plaintext
+- The master password is not stored by default. If you opt into Remember Unlock, it is temporarily stored in browser session storage and is not written to persistent storage.
 - Uses PBKDF2 with SHA-256 hashing
 - Database blob is encrypted with KeePass format
 - Auto-unlock tokens are encrypted with 1-hour expiration
@@ -47,9 +50,10 @@ All your passwords and database information are stored **locally** on your devic
 ### Permissions
 
 - `storage`: To store encrypted database
-- `alarms`: For auto-lock (15 min) and clipboard auto-clear
+- `alarms`: For auto-lock (15 minutes by default, configurable through Remember Unlock) and clipboard auto-clear
 - `activeTab`: To fill passwords when you open the extension on a login page
 - `scripting`: To fill username/password into the current page (only when you click Fill)
+- Website access: To detect password forms, offer to save submitted credentials, and fill matching entries on websites
 - `clipboardWrite` (optional, requested when you first copy): To copy passwords
 
 None of these permissions are used to transmit data externally.

@@ -3,7 +3,12 @@ import type { DatabaseMeta } from '@/lib/types';
 import type { StateResponse } from '@/lib/messages';
 import { sendMessage } from '@/lib/messages';
 import { PasswordInput } from '../components/PasswordInput';
-import { loadUnlockDraft, saveUnlockDraft, clearUnlockDraft } from '@/lib/form-drafts';
+import {
+  clearUnlockDraft,
+  loadRememberUnlockDuration,
+  saveRememberUnlockDuration,
+} from '@/lib/form-drafts';
+import { DEFAULT_REMEMBER_UNLOCK_MS, REMEMBER_UNLOCK_OPTIONS } from '@/lib/constants';
 
 interface Props {
   meta?: DatabaseMeta;
@@ -12,21 +17,22 @@ interface Props {
 
 export function Unlock({ meta, onUnlocked }: Props) {
   const [password, setPassword] = useState('');
+  const [rememberDurationMs, setRememberDurationMs] = useState<number>(DEFAULT_REMEMBER_UNLOCK_MS);
+  const [rememberPreferenceLoaded, setRememberPreferenceLoaded] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    loadUnlockDraft().then((draft) => {
-      if (draft) setPassword(draft);
+    clearUnlockDraft();
+    loadRememberUnlockDuration().then((duration) => {
+      setRememberDurationMs(duration);
+      setRememberPreferenceLoaded(true);
     });
   }, []);
 
   useEffect(() => {
-    const t = setTimeout(() => saveUnlockDraft(password), 300);
-    return () => clearTimeout(t);
-  }, [password]);
-
-  const saveDraftNow = () => saveUnlockDraft(password);
+    if (rememberPreferenceLoaded) void saveRememberUnlockDuration(rememberDurationMs);
+  }, [rememberDurationMs, rememberPreferenceLoaded]);
 
   const handleUnlock = async () => {
     if (!password) {
@@ -39,7 +45,7 @@ export function Unlock({ meta, onUnlocked }: Props) {
     try {
       const res = await sendMessage<StateResponse>({
         type: 'UNLOCK',
-        payload: { password },
+        payload: { password, rememberDurationMs },
       });
       if (res.success) {
         await clearUnlockDraft();
@@ -74,7 +80,7 @@ export function Unlock({ meta, onUnlocked }: Props) {
         </p>
       </div>
 
-      <div className="space-y-3" onKeyDown={handleKeyDown} onBlur={saveDraftNow}>
+      <div className="space-y-3" onKeyDown={handleKeyDown}>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Master Password
@@ -85,6 +91,25 @@ export function Unlock({ meta, onUnlocked }: Props) {
             placeholder="Enter master password"
             autoFocus
           />
+        </div>
+
+        <div>
+          <label htmlFor="remember-unlock" className="block text-sm font-medium text-gray-700 mb-1">
+            Remember unlock for
+          </label>
+          <select
+            id="remember-unlock"
+            value={rememberDurationMs}
+            onChange={(e) => setRememberDurationMs(Number(e.target.value))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+          >
+            {REMEMBER_UNLOCK_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-500 mt-1">
+            The vault locks after this much inactivity. Remembered unlock is cleared when Chrome closes.
+          </p>
         </div>
 
         {error && (

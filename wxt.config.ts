@@ -34,7 +34,7 @@ export default defineConfig({
     description:
       'KeePass-compatible password manager. All data is encrypted locally — nothing leaves your browser.',
     homepage_url: 'https://github.com/Ilya37/keepass-chrome-extension',
-    permissions: ['storage', 'alarms', 'clipboardWrite'],
+    permissions: ['storage', 'alarms', 'clipboardWrite', 'favicon', 'scripting'],
     host_permissions: ['<all_urls>'],
     content_security_policy: {
       extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; style-src 'self' 'unsafe-inline'",
