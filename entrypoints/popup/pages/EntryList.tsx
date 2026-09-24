@@ -196,7 +196,7 @@ export function EntryList({ themeMode, onSelect, onEdit, onAdd, onSessionLost }:
         {activeGroupId && activeGroupId !== UNFILED_GROUP_ID && <button onClick={() => setActiveGroupId(null)} className="w-full rounded-md px-2 py-1.5 text-left text-xs text-gray-500 hover:bg-gray-100">Clear folder selection</button>}
       </div>
     </div>}
-    {activeTab === 'all' && <div className="flex items-center justify-between border-b border-gray-200 px-3 py-1.5">
+    {(activeTab === 'all' || activeTab === 'folders') && <div className="flex items-center justify-between border-b border-gray-200 px-3 py-1.5">
       <span className="text-xs text-gray-500">{displayedEntries.length} passwords</span>
       <button type="button" onClick={toggleSelectAll} disabled={displayedEntries.length === 0} className="text-xs font-medium text-emerald-700 hover:underline disabled:text-gray-400 disabled:no-underline">{allDisplayedSelected ? 'Deselect all' : 'Select all'}</button>
     </div>}

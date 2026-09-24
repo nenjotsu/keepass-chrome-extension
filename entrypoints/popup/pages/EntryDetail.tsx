@@ -4,7 +4,9 @@ import type { MessageResponse } from '@/lib/messages';
 import { sendMessage } from '@/lib/messages';
 import { CopyButton } from '../components/CopyButton';
 import { PasswordInput } from '../components/PasswordInput';
+import { RememberUnlockSelect } from '../components/RememberUnlockSelect';
 import { generateTotp } from '@/lib/totp';
+import { useRememberUnlockPreference } from '../hooks/useRememberUnlockPreference';
 
 function TotpDisplay({ secret, entryId }: { secret: string; entryId: string }) {
   const [code, setCode] = useState('');
@@ -57,7 +59,10 @@ export function EntryDetail({ entry, onEdit, onDelete, onBack, onSessionLost }: 
   const [deletePassword, setDeletePassword] = useState('');
   const [deleteError, setDeleteError] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const [deletePasswordRequired, setDeletePasswordRequired] = useState(true);
+  const [deleteRequirementLoading, setDeleteRequirementLoading] = useState(false);
   const [favorite, setFavorite] = useState(entry.favorite ?? false);
+  const { durationMs, updateDurationMs, ready: rememberPreferenceLoaded } = useRememberUnlockPreference();
 
   const toggleFavorite = async () => {
     const nextFavorite = !favorite;
@@ -73,16 +78,22 @@ export function EntryDetail({ entry, onEdit, onDelete, onBack, onSessionLost }: 
   };
 
   const handleDelete = async () => {
-    if (!deletePassword) {
+    if (deletePasswordRequired && !rememberPreferenceLoaded) return;
+    if (deletePasswordRequired && !deletePassword) {
       setDeleteError('Enter your master password');
       return;
     }
     setDeleting(true);
     setDeleteError('');
     try {
-      const res = await sendMessage({ type: 'DELETE_ENTRY', payload: { id: entry.id, password: deletePassword } });
+      const res = await sendMessage({ type: 'DELETE_ENTRY', payload: { id: entry.id, password: deletePassword || undefined, rememberDurationMs: durationMs } });
       if (!res.success) {
         if (onSessionLost(res)) return;
+        if (res.error === 'MASTER_PASSWORD_REQUIRED') {
+          setDeletePasswordRequired(true);
+          setDeleteError('Enter your master password');
+          return;
+        }
         setDeletePassword('');
         setDeleteError('Wrong password. Try again.');
         return;
@@ -97,6 +108,21 @@ export function EntryDetail({ entry, onEdit, onDelete, onBack, onSessionLost }: 
     setConfirmDelete(false);
     setDeletePassword('');
     setDeleteError('');
+  };
+
+  const showDeleteConfirmation = async () => {
+    setConfirmDelete(true);
+    setDeleteRequirementLoading(true);
+    setDeletePasswordRequired(true);
+    setDeleteError('');
+    const res = await sendMessage<{ success: true; data: boolean } | { success: false; error: string }>({ type: 'GET_DELETE_PASSWORD_REQUIREMENT' });
+    setDeleteRequirementLoading(false);
+    if (!res.success) {
+      if (onSessionLost(res)) return;
+      setDeleteError(res.error);
+      return;
+    }
+    setDeletePasswordRequired(res.data);
   };
 
   const fields = [
@@ -207,7 +233,7 @@ export function EntryDetail({ entry, onEdit, onDelete, onBack, onSessionLost }: 
           Edit
         </button>
         <button
-          onClick={() => setConfirmDelete(true)}
+          onClick={() => void showDeleteConfirmation()}
           className="px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-gray-200 text-gray-600 hover:bg-gray-300"
         >
           Delete
@@ -218,15 +244,16 @@ export function EntryDetail({ entry, onEdit, onDelete, onBack, onSessionLost }: 
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-5">
             <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete entry?</h3>
-            <p className="text-sm text-gray-600 mb-4">This action cannot be undone. Enter your master password to continue.</p>
-            <div onKeyDown={(event) => event.key === 'Enter' && handleDelete()}>
+            <p className="text-sm text-gray-600 mb-4">This action cannot be undone.{deletePasswordRequired ? ' Enter your master password to continue.' : ''}</p>
+            {deletePasswordRequired && <div onKeyDown={(event) => event.key === 'Enter' && handleDelete()}>
               <label className="block text-sm font-medium text-gray-700 mb-1">Master Password</label>
               <PasswordInput value={deletePassword} onChange={setDeletePassword} placeholder="Enter master password" autoFocus />
-            </div>
+              <div className="mt-3"><RememberUnlockSelect id="detail-delete-remember" value={durationMs} onChange={updateDurationMs} disabled={!rememberPreferenceLoaded || deleting} /></div>
+            </div>}
             {deleteError && <div className="text-red-600 text-sm bg-red-50 px-3 py-2 rounded-lg mt-3">{deleteError}</div>}
             <div className="flex gap-2 mt-4">
               <button onClick={cancelDelete} disabled={deleting} className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50">Cancel</button>
-              <button onClick={handleDelete} disabled={deleting || !deletePassword} className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">{deleting ? 'Deleting...' : 'Delete'}</button>
+              <button onClick={handleDelete} disabled={deleting || deleteRequirementLoading || (deletePasswordRequired && (!deletePassword || !rememberPreferenceLoaded))} className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">{deleting ? 'Deleting...' : 'Delete'}</button>
             </div>
           </div>
         </div>

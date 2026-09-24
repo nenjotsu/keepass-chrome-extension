@@ -140,6 +140,9 @@ https://github.com/Ilya37/keepass-chrome-extension
 **activeTab**
 > Used to access the active tab when the user clicks the extension icon, so we can detect the current page URL and show matching password entries. Access is granted only in response to an explicit user gesture (clicking the extension icon). Required for the Fill feature — user opens the extension on a login page, sees matching entries, and clicks Fill to autofill credentials.
 
+**tabs**
+> Used to read the active tab's URL when tabs are switched or navigated, so the extension can show the number of matching Auto Fill-enabled records on its icon. The URL is compared locally with the unlocked vault; page contents and browsing history are not read.
+
 **scripting**
 > Used to inject a fill script into the current tab when the user clicks the "Fill" button in the popup. The script fills username and password fields in login forms. Execution happens only on explicit user action (Fill button click) and only targets the active tab that the user opened the extension on. No background injection — scripts run solely in response to user gestures.
 
@@ -164,7 +167,7 @@ https://github.com/Ilya37/keepass-chrome-extension
 
 ✅ **Будет одобрено если:**
 - Работает как описано в Store Listing
-- Не требует excessive permissions (storage, alarms, activeTab, scripting + optional clipboardWrite)
+- Не требует excessive permissions (storage, alarms, activeTab, tabs, scripting + optional clipboardWrite)
 - Обоснования для activeTab и scripting заполнены во вкладке Privacy practices
 - Privacy Policy ясная и полная
 - Код безопасен и открыт (GitHub)
@@ -205,7 +208,7 @@ https://github.com/Ilya37/keepass-chrome-extension
 
 | Категория | Статус | Примечания |
 |-----------|--------|------------|
-| Permissions | ✅ | storage, alarms, activeTab, scripting + optional clipboardWrite — все используются |
+| Permissions | ✅ | storage, alarms, activeTab, tabs, scripting + optional clipboardWrite — все используются |
 | Privacy & Data | ✅ | Нет внешних запросов (favicon убран), нет аналитики/трекинга |
 | Content Security | ✅ | CSP в порядке, нет eval пользовательского контента |
 | Manifest | ✅ | MV3, нет запрещённых полей |

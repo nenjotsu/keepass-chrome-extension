@@ -3,11 +3,13 @@ import { sendMessage } from '@/lib/messages';
 import type { StateResponse } from '@/lib/messages';
 import { PasswordInput } from '../components/PasswordInput';
 import { StrengthMeter } from '../components/StrengthMeter';
+import { RememberUnlockSelect } from '../components/RememberUnlockSelect';
 import {
   loadCreateVaultDraft,
   saveCreateVaultDraft,
   clearCreateVaultDraft,
 } from '@/lib/form-drafts';
+import { useRememberUnlockPreference } from '../hooks/useRememberUnlockPreference';
 
 interface Props {
   onCreated: () => void;
@@ -21,6 +23,7 @@ export function CreateVault({ onCreated }: Props) {
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<'create' | 'import'>('create');
   const [importFile, setImportFile] = useState<{ name: string; data: number[] } | null>(null);
+  const { durationMs, updateDurationMs, ready: rememberPreferenceLoaded } = useRememberUnlockPreference();
 
   // Load draft on mount
   useEffect(() => {
@@ -109,7 +112,7 @@ export function CreateVault({ onCreated }: Props) {
     try {
       const res = await sendMessage<StateResponse>({
         type: 'IMPORT_DATABASE',
-        payload: { data: importFile.data, password },
+        payload: { data: importFile.data, password, rememberDurationMs: durationMs },
       });
       if (res.success) {
         await clearCreateVaultDraft();
@@ -256,6 +259,7 @@ export function CreateVault({ onCreated }: Props) {
                   onChange={setPassword}
                   placeholder="Enter master password for this file"
                 />
+                <div className="mt-3"><RememberUnlockSelect id="import-remember" value={durationMs} onChange={updateDurationMs} disabled={!rememberPreferenceLoaded || loading} /></div>
               </div>
             )}
 
@@ -269,7 +273,7 @@ export function CreateVault({ onCreated }: Props) {
             {importFile && (
               <button
                 onClick={handleImport}
-                disabled={loading || !password}
+                disabled={loading || !password || !rememberPreferenceLoaded}
                 className="w-full bg-emerald-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 transition-colors"
               >
                 {loading ? 'Importing...' : 'Import Database'}

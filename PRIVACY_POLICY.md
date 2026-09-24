@@ -52,6 +52,7 @@ All your passwords and database information are stored **locally** on your devic
 - `storage`: To store encrypted database
 - `alarms`: For auto-lock (15 minutes by default, configurable through Remember Unlock) and clipboard auto-clear
 - `activeTab`: To fill passwords when you open the extension on a login page
+- `tabs`: To read the active tab's URL and show the number of matching Auto Fill-enabled records on the extension icon. The URL is matched locally against the unlocked vault.
 - `scripting`: To fill username/password into the current page (only when you click Fill)
 - Website access: To detect password forms, offer to save submitted credentials, and fill matching entries on websites
 - `clipboardWrite` (optional, requested when you first copy): To copy passwords

@@ -5,9 +5,9 @@ import type { AppState, EntryData, GroupData, GeneratorOptions, SaveMatchData, P
 export type MessageRequest =
   | { type: 'GET_STATE' }
   | { type: 'CREATE_DATABASE'; payload: { name: string; password: string } }
-  | { type: 'IMPORT_DATABASE'; payload: { data: number[]; password: string } }
+  | { type: 'IMPORT_DATABASE'; payload: { data: number[]; password: string; rememberDurationMs: number } }
   | { type: 'UNLOCK'; payload: { password: string; rememberDurationMs: number } }
-  | { type: 'CHANGE_MASTER_PASSWORD'; payload: { currentPassword: string; newPassword: string } }
+  | { type: 'CHANGE_MASTER_PASSWORD'; payload: { currentPassword: string; newPassword: string; rememberDurationMs: number } }
   | { type: 'LOCK' }
   | { type: 'SESSION_ACTIVITY' }
   | { type: 'GET_ENTRIES'; payload?: { groupId?: string; search?: string } }
@@ -19,7 +19,8 @@ export type MessageRequest =
   | { type: 'IMPORT_CSV_ENTRIES'; payload: { entries: Array<Omit<EntryData, 'id' | 'created' | 'modified'>> } }
   | { type: 'UNDO_CSV_IMPORT'; payload: { ids: string[] } }
   | { type: 'UPDATE_ENTRY'; payload: { entry: EntryData } }
-  | { type: 'DELETE_ENTRY'; payload: { id: string; password: string } }
+  | { type: 'GET_DELETE_PASSWORD_REQUIREMENT' }
+  | { type: 'DELETE_ENTRY'; payload: { id: string; password?: string; rememberDurationMs?: number } }
   | { type: 'GET_GROUPS' }
   | { type: 'CREATE_GROUP'; payload: { name: string } }
   | { type: 'RENAME_GROUP'; payload: { id: string; name: string } }
@@ -37,7 +38,7 @@ export type MessageRequest =
   | { type: 'FILL_IN_TAB'; payload: { tabId: number; entryId: string } }
   | { type: 'GET_BACKUP_HISTORY'; payload?: { limit?: number } }
   | { type: 'CREATE_BACKUP' }
-  | { type: 'RESTORE_FROM_BACKUP'; payload: { timestamp: number; password: string } }
+  | { type: 'RESTORE_FROM_BACKUP'; payload: { timestamp: number; password: string; rememberDurationMs: number } }
   | { type: 'GET_STORAGE_HEALTH' }
   | { type: 'GET_ICON' };
 

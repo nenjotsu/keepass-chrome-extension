@@ -1,14 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import type { DatabaseMeta } from '@/lib/types';
 import type { StateResponse } from '@/lib/messages';
 import { sendMessage } from '@/lib/messages';
 import { PasswordInput } from '../components/PasswordInput';
-import {
-  clearUnlockDraft,
-  loadRememberUnlockDuration,
-  saveRememberUnlockDuration,
-} from '@/lib/form-drafts';
-import { DEFAULT_REMEMBER_UNLOCK_MS, REMEMBER_UNLOCK_OPTIONS } from '@/lib/constants';
+import { RememberUnlockSelect } from '../components/RememberUnlockSelect';
+import { clearUnlockDraft } from '@/lib/form-drafts';
+import { useRememberUnlockPreference } from '../hooks/useRememberUnlockPreference';
 
 interface Props {
   meta?: DatabaseMeta;
@@ -17,22 +14,11 @@ interface Props {
 
 export function Unlock({ meta, onUnlocked }: Props) {
   const [password, setPassword] = useState('');
-  const [rememberDurationMs, setRememberDurationMs] = useState<number>(DEFAULT_REMEMBER_UNLOCK_MS);
-  const [rememberPreferenceLoaded, setRememberPreferenceLoaded] = useState(false);
+  const { durationMs: rememberDurationMs, updateDurationMs, ready: rememberPreferenceLoaded } = useRememberUnlockPreference();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    clearUnlockDraft();
-    loadRememberUnlockDuration().then((duration) => {
-      setRememberDurationMs(duration);
-      setRememberPreferenceLoaded(true);
-    });
-  }, []);
-
-  useEffect(() => {
-    if (rememberPreferenceLoaded) void saveRememberUnlockDuration(rememberDurationMs);
-  }, [rememberDurationMs, rememberPreferenceLoaded]);
+  useEffect(() => { void clearUnlockDraft(); }, []);
 
   const handleUnlock = async () => {
     if (!password) {
@@ -93,24 +79,7 @@ export function Unlock({ meta, onUnlocked }: Props) {
           />
         </div>
 
-        <div>
-          <label htmlFor="remember-unlock" className="block text-sm font-medium text-gray-700 mb-1">
-            Remember unlock for
-          </label>
-          <select
-            id="remember-unlock"
-            value={rememberDurationMs}
-            onChange={(e) => setRememberDurationMs(Number(e.target.value))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
-          >
-            {REMEMBER_UNLOCK_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
-          <p className="text-xs text-gray-500 mt-1">
-            The vault locks after this much inactivity. Remembered unlock is cleared when Chrome closes.
-          </p>
-        </div>
+        <RememberUnlockSelect id="remember-unlock" value={rememberDurationMs} onChange={updateDurationMs} disabled={!rememberPreferenceLoaded} />
 
         {error && (
           <div className="text-red-600 text-sm bg-red-50 px-3 py-2 rounded-lg">
@@ -120,7 +89,7 @@ export function Unlock({ meta, onUnlocked }: Props) {
 
         <button
           onClick={handleUnlock}
-          disabled={loading}
+          disabled={loading || !rememberPreferenceLoaded}
           className="w-full bg-emerald-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 transition-colors"
         >
           {loading ? 'Unlocking...' : 'Unlock'}

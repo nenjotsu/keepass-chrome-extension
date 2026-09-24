@@ -4,11 +4,13 @@ import type { EntryResponse, GeneratePasswordResponse, MessageResponse } from '@
 import { sendMessage } from '@/lib/messages';
 import { PasswordInput } from '../components/PasswordInput';
 import { StrengthMeter } from '../components/StrengthMeter';
+import { RememberUnlockSelect } from '../components/RememberUnlockSelect';
 import {
   loadEntryFormDraft,
   saveEntryFormDraft,
   clearEntryFormDraft,
 } from '@/lib/form-drafts';
+import { useRememberUnlockPreference } from '../hooks/useRememberUnlockPreference';
 
 interface Props {
   entry?: EntryData;
@@ -33,6 +35,13 @@ export function EntryForm({ entry, onSaved, onCancel, onSessionLost }: Props) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [restoredFromDraft, setRestoredFromDraft] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deletePasswordRequired, setDeletePasswordRequired] = useState(true);
+  const [deleteRequirementLoading, setDeleteRequirementLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const { durationMs, updateDurationMs, ready: rememberPreferenceLoaded } = useRememberUnlockPreference();
 
   // Load draft (new or edit) or init from entry when no draft
   useEffect(() => {
@@ -99,6 +108,57 @@ export function EntryForm({ entry, onSaved, onCancel, onSessionLost }: Props) {
     if (res.success) {
       setPassword(res.data);
     }
+  };
+
+  const showDeleteConfirmation = async () => {
+    if (!entry) return;
+    setConfirmDelete(true);
+    setDeleteRequirementLoading(true);
+    setDeletePasswordRequired(true);
+    setDeleteError('');
+    const res = await sendMessage<{ success: true; data: boolean } | { success: false; error: string }>({ type: 'GET_DELETE_PASSWORD_REQUIREMENT' });
+    setDeleteRequirementLoading(false);
+    if (!res.success) {
+      if (onSessionLost(res)) return;
+      setDeleteError(res.error);
+      return;
+    }
+    setDeletePasswordRequired(res.data);
+  };
+
+  const handleDelete = async () => {
+    if (!entry) return;
+    if (deletePasswordRequired && !rememberPreferenceLoaded) return;
+    if (deletePasswordRequired && !deletePassword) {
+      setDeleteError('Enter your master password');
+      return;
+    }
+    setDeleteLoading(true);
+    setDeleteError('');
+    try {
+      const res = await sendMessage({ type: 'DELETE_ENTRY', payload: { id: entry.id, password: deletePassword || undefined, rememberDurationMs: durationMs } });
+      if (!res.success) {
+        if (onSessionLost(res)) return;
+        if (res.error === 'MASTER_PASSWORD_REQUIRED') {
+          setDeletePasswordRequired(true);
+          setDeleteError('Enter your master password');
+          return;
+        }
+        setDeletePassword('');
+        setDeleteError(res.error === 'INVALID_MASTER_PASSWORD' ? 'Wrong password. Try again.' : res.error);
+        return;
+      }
+      await clearEntryFormDraft(entry.id);
+      onSaved();
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const cancelDelete = () => {
+    setConfirmDelete(false);
+    setDeletePassword('');
+    setDeleteError('');
   };
 
   const handleSave = async () => {
@@ -180,16 +240,21 @@ export function EntryForm({ entry, onSaved, onCancel, onSessionLost }: Props) {
 
   return (
     <div className="p-4">
-      <div className="mb-4">
+      <div className="mb-4 flex items-start justify-between">
         <h2 className="text-lg font-semibold text-gray-800">
           {isEditing ? 'Edit Entry' : 'New Entry'}
         </h2>
-        {hasUnsavedChanges && restoredFromDraft && (
+        {isEditing && <button type="button" onClick={() => void showDeleteConfirmation()} disabled={loading || deleteLoading} aria-label="Delete entry" title="Delete entry" className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50">
+          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16" />
+          </svg>
+        </button>}
+      </div>
+      {hasUnsavedChanges && restoredFromDraft && (
           <p className="mt-1 inline-block rounded border border-amber-200 bg-amber-50 px-2.5 py-1 text-sm text-amber-800">
             You have unsaved changes
           </p>
-        )}
-      </div>
+      )}
 
       <div className="space-y-3" onBlur={saveDraftNow}>
         <div>
@@ -336,6 +401,22 @@ export function EntryForm({ entry, onSaved, onCancel, onSessionLost }: Props) {
           </button>
         </div>
       </div>
+      {confirmDelete && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div role="dialog" aria-modal="true" aria-labelledby="edit-delete-title" className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
+          <h3 id="edit-delete-title" className="mb-2 text-lg font-semibold text-gray-900">Delete entry?</h3>
+          <p className="mb-4 text-sm text-gray-600">This action cannot be undone.{deletePasswordRequired ? ' Enter your master password to continue.' : ''}</p>
+          {deletePasswordRequired && <div onKeyDown={(event) => event.key === 'Enter' && void handleDelete()}>
+            <label className="mb-1 block text-sm font-medium text-gray-700">Master Password</label>
+            <PasswordInput value={deletePassword} onChange={setDeletePassword} placeholder="Enter master password" autoFocus />
+            <div className="mt-3"><RememberUnlockSelect id="form-delete-remember" value={durationMs} onChange={updateDurationMs} disabled={!rememberPreferenceLoaded || deleteLoading} /></div>
+          </div>}
+          {deleteError && <div role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{deleteError}</div>}
+          <div className="mt-4 flex gap-2">
+            <button type="button" onClick={cancelDelete} disabled={deleteLoading} className="flex-1 rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 disabled:opacity-50">Cancel</button>
+            <button type="button" onClick={() => void handleDelete()} disabled={deleteLoading || deleteRequirementLoading || (deletePasswordRequired && (!deletePassword || !rememberPreferenceLoaded))} className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">{deleteLoading ? 'Deleting...' : 'Delete'}</button>
+          </div>
+        </div>
+      </div>}
     </div>
   );
 }

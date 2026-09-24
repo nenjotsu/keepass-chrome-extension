@@ -42,7 +42,7 @@ export default defineConfig({
     description:
       'KeePass-compatible password manager with local encryption and optional privacy-preserving breached-password checks.',
     homepage_url: 'https://github.com/Ilya37/keepass-chrome-extension',
-    permissions: ['storage', 'alarms', 'clipboardWrite', 'favicon', 'scripting', 'activeTab'],
+    permissions: ['storage', 'alarms', 'clipboardWrite', 'favicon', 'scripting', 'activeTab', 'tabs'],
     optional_host_permissions: ['*://*/*', 'https://api.pwnedpasswords.com/*'],
     content_security_policy: {
       extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; style-src 'self' 'unsafe-inline'",

@@ -4,6 +4,20 @@
 
 KeePass-compatible password manager as a Chrome extension. Vault data is encrypted and stored locally. Optional leaked-password checks send partial password hashes to Have I Been Pwned after your confirmation.
 
+## Quick look
+
+<p align="center">
+  <img src="images/entries-light.png" width="220" alt="KeePass entry list in light mode">
+  <img src="images/folders-selection.png" width="220" alt="Folder view with selectable password entries">
+</p>
+<p align="center"><sub>Entry list</sub> &nbsp; · &nbsp; <sub>Folder selection</sub></p>
+
+<p align="center">
+  <img src="images/password-generator.png" width="220" alt="Password generator settings">
+  <img src="images/unlock-screen.png" width="220" alt="Unlock screen with Remember Unlock duration selector">
+</p>
+<p align="center"><sub>Password generator</sub> &nbsp; · &nbsp; <sub>Unlock and Remember Unlock</sub></p>
+
 ## Features
 
 - **Create and open `.kdbx` databases** — full KeePass 2.x compatibility
@@ -36,7 +50,7 @@ KeePass-compatible password manager as a Chrome extension. Vault data is encrypt
 - After you submit a password sign-in or signup form, pending credentials remain in local memory until you save or dismiss the offer; a short-lived in-memory handoff supports full-page navigation
 - Credentials are added or updated only after you choose **Save** or **Update**. If the vault is locked or unavailable, pending values are discarded
 - Clipboard is automatically cleared after copying a password
-- Entry and database deletion require fresh master-password verification; the re-entered password is not stored or logged
+- Database deletion always requires fresh master-password verification. Entry deletion uses an active Remember Unlock session when available; otherwise it asks for the master password. A password entered for confirmation is not stored or logged
 
 ## Installation
 
@@ -108,20 +122,21 @@ With Remember Unlock enabled, the extension temporarily keeps your master passwo
 - **Import logins from CSV** — use the import button in the unlocked vault header to import CSV exports from Chrome, Brave, Microsoft Edge, Bitwarden, LastPass, or another manager. Review and map columns, skip rows without passwords and duplicates by default, and undo the latest import while the popup remains open. CSV data is processed locally; non-login item types are not imported.
 - **Add entry** — "Add Entry" button at the bottom of the list
 - **View** — click an entry in the list
-- **Edit** — "Edit" button on the entry page
+- **Edit** — choose the "Edit" button on the entry page; the edit screen includes a trash icon for deleting that entry
 - **Favorite** — use the star button on the entry page to add or remove an entry from Favorites
-- **Folders** — create, rename, and delete folders in the entry list; use checkboxes in All items, Favorites, or Recents to move multiple passwords at once. Deleting a folder moves its passwords to Unfiled and lifts its subfolders one level.
-- **Delete** — choose "Delete," then enter the master password in the destructive-action dialog. An incorrect password leaves the entry unchanged and allows another attempt.
+- **Folders** — create, rename, and delete folders in the entry list. In the Folders view, choose a folder to filter its passwords, then use **Select all** or the checkboxes to select entries (search narrows the selection); use the move bar to move them to another folder. All items, Favorites, and Recents also support selecting and moving multiple passwords. Deleting a folder moves its passwords to Unfiled and lifts its subfolders one level.
+- **Delete** — choose "Delete" on the entry page or the trash icon while editing. Confirm the deletion; the master password is requested if Remember Unlock is not active. An incorrect password leaves the entry unchanged and allows another attempt.
 - **Copy** — copy icon next to login, password, and URL fields
 
 The popup always restores the last page and form drafts when reopened. You can close it to copy from elsewhere — your data will be there when you reopen.
 
-The entry list has four views:
+The entry list has five views:
 
 - **All relevant** — entries whose saved hostname exactly matches the active browser tab; selecting one fills the login form directly
 - **All items** — every vault entry
 - **Favorites** — starred entries, in vault order
 - **Recents** — up to 20 distinct entries, ordered by most recently copied or filled
+- **Folders** — choose a folder to show its passwords; search narrows the displayed entries and **Select all** selects those displayed entries. Move selected passwords with the move bar.
 
 If there are no relevant entries for the current site, the popup starts on **All items**. Searches narrow the currently selected view.
 
@@ -145,6 +160,8 @@ When you visit a login page with a matching entry that has **Allow Auto Fill** e
 1. The extension waits for a visible password field and finds entries matching the exact hostname. It does not put credentials into the page automatically.
 2. Click the **Fill** control beside the password field to fill the first match, or open the popup, choose the entry you want, and click **Fill**.
 3. Filling never submits the login form; review the page and submit it yourself.
+
+When the vault is unlocked, the extension icon shows how many Auto Fill-enabled login entries match the active tab's exact hostname. The badge clears when there are no matches or the vault is locked, and displays `99+` for 100 or more matches.
 
 Each entry has an **Allow Auto Fill** checkbox, enabled by default. Turn it off to exclude that entry from matching and fill suggestions. **Remember Unlock** is a separate opt-in on the unlock screen; its selected duration controls how long the master password remains available for automatic re-unlock.
 
@@ -256,7 +273,7 @@ graph TB
 
 ### Message protocol
 
-Typed messages in `lib/messages.ts`: GET_STATE, CREATE_DATABASE, IMPORT_DATABASE, UNLOCK, LOCK, GET_ENTRIES, GET_ENTRY, CREATE_ENTRY, IMPORT_CSV_ENTRIES, UNDO_CSV_IMPORT, UPDATE_ENTRY, DELETE_ENTRY, GET_GROUPS, GENERATE_PASSWORD, COPY_TO_CLIPBOARD, EXPORT_DATABASE, GET_ENTRIES_FOR_URL, FILL_IN_TAB.
+Typed messages in `lib/messages.ts`: GET_STATE, CREATE_DATABASE, IMPORT_DATABASE, UNLOCK, LOCK, GET_ENTRIES, GET_ENTRY, CREATE_ENTRY, IMPORT_CSV_ENTRIES, UNDO_CSV_IMPORT, UPDATE_ENTRY, GET_DELETE_PASSWORD_REQUIREMENT, DELETE_ENTRY, GET_GROUPS, GENERATE_PASSWORD, COPY_TO_CLIPBOARD, EXPORT_DATABASE, GET_ENTRIES_FOR_URL, FILL_IN_TAB.
 
 ### Security
 
