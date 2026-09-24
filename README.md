@@ -9,6 +9,7 @@ KeePass-compatible password manager as a Chrome extension. Vault data is encrypt
 - **Create and open `.kdbx` databases** — full KeePass 2.x compatibility
 - **Import/export** — open existing KeePass database or create a new one
 - **Password management** — add, edit, delete entries; fill in URL for autofill on sites
+- **Secure notes and TOTP** — store encrypted notes and protected Base32 authenticator seeds; generate rotating six-digit codes locally
 - **Entry views** — switch between relevant entries for the current site, all items, favorites, and recent entries
 - **Favorites and recents** — mark important entries as favorites; keep the 20 most recently copied or filled entries at hand
 - **Search** — quick search by title, login, URL and tags within the selected entry view
@@ -20,10 +21,13 @@ KeePass-compatible password manager as a Chrome extension. Vault data is encrypt
 - **Soft interface styling** — translucent one-pixel borders, subtle surfaces, and quiet entry-row hover effects
 - **Copy to clipboard** — with auto-clear after 15 seconds
 - **Configurable auto-lock** — locks after 15 minutes by default, with optional Remember Unlock durations of 1 hour, 8 hours, 1 day, or 1 week
+- **Encrypted backups** — create local snapshots, restore a selected snapshot, and change the master password
+- **Per-site access** — grant autofill and save-password access only to sites you choose
 
 ## Security
 
 - Master password is not stored by default. If you opt into Remember Unlock, it is held in browser session storage until the selected time expires, you manually lock or replace/delete the vault, or the browser exits
+- Master-password recovery is not supported. Keep the master password safe and export the encrypted `.kdbx` database to a separate location; changing the password re-encrypts the vault and replaces local snapshots
 - Form drafts restore non-secret fields only; master passwords and entry passwords are not stored as drafts
 - Database stored encrypted (AES-256 / ChaCha20) in `.kdbx` format
 - Encryption key exists in memory only while the database is unlocked
@@ -134,6 +138,8 @@ Available via the key icon in the header or when creating/editing an entry (refr
 
 **Fill in the URL field** when creating or editing an entry — this is required for autofill. Enter just the hostname (e.g. `italki.com` or `mail.example.com`); no `https://` needed.
 
+Before autofill or save prompts can run on a site, choose **Enable access on this site** from the extension menu and grant access. Refresh that page after granting permission. Access is requested per origin.
+
 When you visit a login page with a matching entry that has **Allow Auto Fill** enabled:
 
 1. The extension waits for a visible password field and finds entries matching the exact hostname. It does not put credentials into the page automatically.
@@ -141,6 +147,8 @@ When you visit a login page with a matching entry that has **Allow Auto Fill** e
 3. Filling never submits the login form; review the page and submit it yourself.
 
 Each entry has an **Allow Auto Fill** checkbox, enabled by default. Turn it off to exclude that entry from matching and fill suggestions. **Remember Unlock** is a separate opt-in on the unlock screen; its selected duration controls how long the master password remains available for automatic re-unlock.
+
+Choose **Secure note** as the entry type to save private text without login fields. Login entries may also store a Base32 authenticator secret; its six-digit TOTP code is generated locally and refreshes every 30 seconds.
 
 You can also open the extension popup on a matching page and select an entry from **All relevant** to fill it directly. Entries with Auto Fill disabled are not offered for filling.
 
@@ -155,6 +163,12 @@ The prompt is available only while the vault is unlocked. If the vault is locked
 ### Delete a database
 
 Use the trash icon in the header, then enter the master password in the deletion dialog. The database is removed only after successful verification; canceling or entering a wrong password leaves it intact.
+
+### Backups and master password
+
+Open **Backups & Master Password** from the menu to create a local encrypted snapshot or restore one. Snapshots are also created after ten edits and on the next save after an hour has elapsed. Snapshots live in the browser profile, so periodically use **Export Database** and store the `.kdbx` file somewhere separate. Changing the master password re-encrypts the vault and replaces old snapshots because they use the previous password.
+
+There is no master-password recovery. If the password is lost, the vault cannot be decrypted; an exported backup protects against device or browser-profile loss, not a forgotten password.
 
 ### Appearance
 

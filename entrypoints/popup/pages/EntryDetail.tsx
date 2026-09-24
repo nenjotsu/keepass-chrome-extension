@@ -1,9 +1,37 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { EntryData } from '@/lib/types';
 import type { MessageResponse } from '@/lib/messages';
 import { sendMessage } from '@/lib/messages';
 import { CopyButton } from '../components/CopyButton';
 import { PasswordInput } from '../components/PasswordInput';
+import { generateTotp } from '@/lib/totp';
+
+function TotpDisplay({ secret, entryId }: { secret: string; entryId: string }) {
+  const [code, setCode] = useState('');
+  const [error, setError] = useState('');
+  const [secondsLeft, setSecondsLeft] = useState(30);
+  useEffect(() => {
+    let active = true;
+    const update = async () => {
+      const now = Date.now();
+      setSecondsLeft(30 - Math.floor(now / 1000) % 30);
+      try {
+        const next = await generateTotp(secret, now);
+        if (active) { setCode(next); setError(''); }
+      } catch (err) {
+        if (active) setError(err instanceof Error ? err.message : 'Invalid TOTP secret.');
+      }
+    };
+    void update();
+    const timer = window.setInterval(() => void update(), 1000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [secret]);
+  if (error) return <p role="alert" className="text-sm text-red-600">{error}</p>;
+  return <div className="flex items-center justify-between">
+    <div><span className="font-mono text-xl tracking-widest">{code.slice(0, 3)} {code.slice(3)}</span><p className="text-xs text-gray-500">Refreshes in {secondsLeft}s</p></div>
+    {code && <CopyButton text={code} entryId={entryId} />}
+  </div>;
+}
 
 function displayTitle(entry: EntryData): string {
   if (entry.title && entry.title !== 'Untitled') return entry.title;
@@ -90,6 +118,7 @@ export function EntryDetail({ entry, onEdit, onDelete, onBack, onSessionLost }: 
         <h2 className="text-lg font-semibold text-gray-800">
           {displayTitle(entry)}
         </h2>
+        {entry.kind === 'secure_note' && <p className="mt-1 text-xs font-medium uppercase tracking-wide text-gray-500">Secure note</p>}
         {entry.tags.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1">
             {entry.tags.map((tag) => (
@@ -106,6 +135,7 @@ export function EntryDetail({ entry, onEdit, onDelete, onBack, onSessionLost }: 
 
       {/* Fields */}
       <div className="space-y-3">
+        {entry.totpSecret && entry.kind !== 'secure_note' && <div className="rounded-lg border border-gray-200 bg-white p-3"><span className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500">Authenticator code</span><TotpDisplay secret={entry.totpSecret} entryId={entry.id} /></div>}
         {fields.map(
           (field) =>
             field.value && (

@@ -4,7 +4,9 @@ import type { PendingCredentialData } from '@/lib/types';
 import { isCredentialSaveForm } from '@/lib/credential-save';
 
 export default defineContentScript({
-  matches: ['*://*/*'],
+  // The bundle is registered for a specific origin only after the user grants
+  // optional host access from the popup.
+  matches: [],
   main() {
     let fillControlAdded = false;
     let credentialsRequestPending = false;

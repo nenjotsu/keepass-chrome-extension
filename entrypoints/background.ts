@@ -1,4 +1,4 @@
-import type { MessageRequest, MessageResponse, StateResponse, EntriesResponse, EntryResponse, GroupsResponse, GeneratePasswordResponse, ExportResponse, BackupHistoryResponse, StorageHealthResponse, RecoveryStatusResponse } from '@/lib/messages';
+import type { MessageRequest, MessageResponse, StateResponse, EntriesResponse, EntryResponse, GroupsResponse, GeneratePasswordResponse, ExportResponse, BackupHistoryResponse, StorageHealthResponse } from '@/lib/messages';
 import type { AppState, PendingCredentialData } from '@/lib/types';
 import {
   ALARM_AUTO_LOCK,
@@ -11,7 +11,6 @@ import * as kdbx from '@/lib/kdbx';
 import * as storage from '@/lib/storage';
 import * as persistentStorage from '@/lib/persistent-storage';
 import * as backupSystem from '@/lib/backup-system';
-import * as recoverySystem from '@/lib/recovery-system';
 import * as stateJournal from '@/lib/state-journal';
 import { generatePassword } from '@/lib/password-generator';
 import { clearClipboard } from '@/lib/clipboard';
@@ -42,6 +41,10 @@ async function recordRecentEntry(entryId: string | undefined): Promise<void> {
 
 async function initializeStorageSystems(): Promise<void> {
   try {
+    // Remove the unsupported legacy recovery verifier. Master-password
+    // recovery is intentionally not provided because it would undermine the
+    // vault encryption key.
+    await browser.storage.local.remove('recovery_codes');
     // Remove plaintext drafts created by older versions, without clearing an
     // explicitly remembered unlock for the current browser session.
     await storage.clearLegacyUnlockMaterial();
@@ -194,6 +197,9 @@ export default defineBackground(() => {
       if (backupSystem.shouldCreateEditThresholdSnapshot()) {
         await backupSystem.createSnapshot(data, meta, 'edit_threshold');
       }
+      if (backupSystem.shouldCreateHourlySnapshot()) {
+        await backupSystem.createSnapshot(data, meta, 'hourly');
+      }
 
       // Save to dual storage (chrome.storage.local + IndexedDB)
       const result = await persistentStorage.persistDatabase(data, meta, 'edit');
@@ -235,6 +241,17 @@ export default defineBackground(() => {
     }
   });
 
+  browser.permissions.onRemoved.addListener((removed) => {
+    const removedOrigins = new Set(removed.origins ?? []);
+    if (removedOrigins.size === 0) return;
+    void browser.scripting.getRegisteredContentScripts().then((scripts) => {
+      const ids = scripts
+        .filter((script) => script.matches?.some((match) => removedOrigins.has(match)))
+        .map((script) => script.id);
+      if (ids.length) return browser.scripting.unregisterContentScripts({ ids });
+    }).catch(() => {});
+  });
+
   // ── Message handler ────────────────────────────────────────
 
   browser.runtime.onMessage.addListener((message: MessageRequest, sender) =>
@@ -244,7 +261,7 @@ export default defineBackground(() => {
     }),
   );
 
-  async function handleMessage(msg: MessageRequest, sender?: { tab?: { id?: number } }): Promise<MessageResponse> {
+  async function handleMessage(msg: MessageRequest, sender?: { tab?: { id?: number }; url?: string }): Promise<MessageResponse> {
     try {
       // Ensure storage is initialized before processing messages
       if (storageInitialized) {
@@ -259,7 +276,7 @@ export default defineBackground(() => {
         }
 
         case 'CREATE_DATABASE': {
-          const op = await stateJournal.beginOperation('create_database', msg.payload);
+          const op = await stateJournal.beginOperation('create_database', { name: msg.payload.name });
           try {
             const { name, password } = msg.payload;
             await storage.clearSessionSecrets();
@@ -267,8 +284,9 @@ export default defineBackground(() => {
             await kdbx.createDatabase(name, password);
             await persistDatabase();
 
-            // Initialize recovery codes and password hash
-            const recoveryData = await recoverySystem.initializeRecoveryCodes(password);
+            // The master password is intentionally not recoverable. Remove any
+            // orphaned recovery metadata from older builds.
+            await browser.storage.local.remove('recovery_codes');
 
             resetAutoLockTimer();
             await stateJournal.completeOperation(op, '');
@@ -278,7 +296,6 @@ export default defineBackground(() => {
               success: true,
               data: {
                 appState: await getAppState(),
-                recoveryCodes: recoveryData.codes,
               },
             } as unknown as StateResponse;
           } catch (err) {
@@ -307,8 +324,7 @@ export default defineBackground(() => {
             unlockDurationMs = null;
             await persistDatabase();
 
-            // Initialize recovery codes for imported database
-            const recoveryData = await recoverySystem.initializeRecoveryCodes(password);
+            await browser.storage.local.remove('recovery_codes');
 
             resetAutoLockTimer();
             await stateJournal.completeOperation(op, '');
@@ -317,7 +333,6 @@ export default defineBackground(() => {
               success: true,
               data: {
                 appState: await getAppState(),
-                recoveryCodes: recoveryData.codes,
               },
             } as unknown as StateResponse;
           } catch (err) {
@@ -366,6 +381,26 @@ export default defineBackground(() => {
         case 'LOCK': {
           await lockDatabase();
           return { success: true, data: null };
+        }
+
+        case 'CHANGE_MASTER_PASSWORD': {
+          const guard = await requireUnlocked();
+          if (guard) return guard;
+          const { currentPassword, newPassword } = msg.payload;
+          if (!newPassword || newPassword.length < 8) return { success: false, error: 'Master password must be at least 8 characters.' };
+          if (!(await kdbx.verifyMasterPassword(currentPassword))) return { success: false, error: 'Current master password is incorrect.' };
+          const remembered = await storage.loadRememberedUnlock();
+          await kdbx.changeMasterPassword(newPassword);
+          await persistDatabase();
+          // Old snapshots are encrypted with the old master password. Replace
+          // them so restore continues to work using the current credential.
+          await persistentStorage.clearDatabaseVersions();
+          await backupSystem.clearBackupHistory();
+          const freshBackupCreated = await backupSystem.createSnapshot(
+            await kdbx.saveDatabase(), kdbx.getDatabaseMeta(), 'manual',
+          );
+          if (remembered) await storage.rememberUnlock(newPassword, remembered.durationMs);
+          return { success: true, data: { freshBackupCreated } };
         }
 
         case 'SESSION_ACTIVITY': {
@@ -505,7 +540,7 @@ export default defineBackground(() => {
         case 'DELETE_ENTRY': {
           const guard = await requireUnlocked();
           if (guard) return guard;
-          if (!(await recoverySystem.verifyPassword(msg.payload.password))) {
+          if (!(await kdbx.verifyMasterPassword(msg.payload.password))) {
             return { success: false, error: 'INVALID_MASTER_PASSWORD' };
           }
           const deleted = kdbx.deleteEntry(msg.payload.id);
@@ -571,7 +606,7 @@ export default defineBackground(() => {
         case 'DELETE_DATABASE': {
           const guard = await requireUnlocked();
           if (guard) return guard;
-          if (!(await recoverySystem.verifyPassword(msg.payload.password))) {
+          if (!(await kdbx.verifyMasterPassword(msg.payload.password))) {
             return { success: false, error: 'INVALID_MASTER_PASSWORD' };
           }
           const op = await stateJournal.beginOperation('delete_database', {});
@@ -582,8 +617,7 @@ export default defineBackground(() => {
             await persistentStorage.removeDatabaseCompletely();
             await storage.removeDatabaseFromStorage();
 
-            // Clear recovery codes
-            await recoverySystem.clearRecoveryCodes();
+            await browser.storage.local.remove('recovery_codes');
 
             // Clear tokens
             await storage.clearSessionSecrets();
@@ -671,12 +705,19 @@ export default defineBackground(() => {
         }
 
         case 'FILL_IN_TAB': {
+          if (!sender?.url?.startsWith(browser.runtime.getURL('/'))) {
+            return { success: false, error: 'Fill requests must come from the extension popup.' };
+          }
           const guard = await requireUnlocked();
           if (guard) return guard;
           const { tabId, entryId } = msg.payload;
           const entry = kdbx.getEntry(entryId);
-          if (!entry || entry.autoFill === false) {
+          if (!entry || entry.kind === 'secure_note' || entry.autoFill === false) {
             return { success: false, error: 'This entry is not enabled for autofill.' };
+          }
+          const tab = await browser.tabs.get(tabId);
+          if (!tab.url || !kdbx.getEntriesForUrl(tab.url).some((candidate) => candidate.id === entryId)) {
+            return { success: false, error: 'This entry does not match the active site.' };
           }
           try {
             await browser.scripting.executeScript({
@@ -737,11 +778,20 @@ export default defineBackground(() => {
           } as unknown as BackupHistoryResponse;
         }
 
+        case 'CREATE_BACKUP': {
+          const guard = await requireUnlocked();
+          if (guard) return guard;
+          const created = await backupSystem.createSnapshot(await kdbx.saveDatabase(), kdbx.getDatabaseMeta(), 'manual');
+          if (!created) return { success: false, error: 'Could not save the backup. Check available storage and try again.' };
+          await backupSystem.pruneBackups();
+          return { success: true, data: await backupSystem.getBackupHistory() };
+        }
+
         case 'RESTORE_FROM_BACKUP': {
-          const op = await stateJournal.beginOperation('restore_backup', msg.payload);
+          const op = await stateJournal.beginOperation('restore_backup', { timestamp: msg.payload.timestamp });
           try {
             const { timestamp, password } = msg.payload;
-            const blob = await persistentStorage.recoverDatabaseVersion(Date.parse(new Date(timestamp).toISOString()) / 1000);
+            const blob = await backupSystem.restoreSnapshot(timestamp);
 
             await kdbx.openDatabase(blob, password);
             await storage.clearSessionSecrets();
@@ -763,18 +813,6 @@ export default defineBackground(() => {
             success: true,
             data: health,
           } as unknown as StorageHealthResponse;
-        }
-
-        case 'GET_RECOVERY_STATUS': {
-          const remaining = await recoverySystem.getRemainingRecoveryCodes();
-          return {
-            success: true,
-            data: {
-              hasRecoveryCodes: remaining > 0,
-              remainingCodes: remaining,
-              codesGenerated: 20,  // TODO: Get actual generated count
-            },
-          } as unknown as RecoveryStatusResponse;
         }
 
         default:

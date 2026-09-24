@@ -9,6 +9,7 @@ import { EntryForm } from './pages/EntryForm';
 import { EntryDetail } from './pages/EntryDetail';
 import { Generator } from './pages/Generator';
 import { PasswordInput } from './components/PasswordInput';
+import { VaultMaintenance } from './components/VaultMaintenance';
 import { CsvImport } from './pages/CsvImport';
 import { PasswordAudit } from './pages/PasswordAudit';
 
@@ -51,6 +52,10 @@ function App() {
   const [themeMode, setThemeMode] = useState<ThemeMode>('light');
   const [menuOpen, setMenuOpen] = useState(false);
   const [showBreachConsent, setShowBreachConsent] = useState(false);
+  const [breachConsentError, setBreachConsentError] = useState('');
+  const [showVaultMaintenance, setShowVaultMaintenance] = useState(false);
+  const [siteAccessMessage, setSiteAccessMessage] = useState('');
+  const [activeSiteOrigin, setActiveSiteOrigin] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -76,6 +81,16 @@ function App() {
       if (stored.uiAppearance === 'dark' || stored.uiAppearance === 'light') setThemeMode(stored.uiAppearance);
       setThemeReady(true);
     }).catch(() => setThemeReady(true));
+  }, []);
+
+  useEffect(() => {
+    void browser.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
+      if (!tab?.url) return;
+      try {
+        const url = new URL(tab.url);
+        if (url.protocol === 'http:' || url.protocol === 'https:') setActiveSiteOrigin(url.origin);
+      } catch { /* browser-internal pages do not have site access */ }
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -181,8 +196,11 @@ function App() {
   const startAudit = async (kind: 'breached' | 'weak') => {
     setMenuOpen(false);
     if (kind === 'breached') {
-      const { hibpConsentAccepted } = await browser.storage.local.get('hibpConsentAccepted');
-      if (hibpConsentAccepted !== true) {
+      const [{ hibpConsentAccepted }, canContactHibp] = await Promise.all([
+        browser.storage.local.get('hibpConsentAccepted'),
+        browser.permissions.contains({ origins: ['https://api.pwnedpasswords.com/*'] }),
+      ]);
+      if (hibpConsentAccepted !== true || !canContactHibp) {
         setShowBreachConsent(true);
         return;
       }
@@ -191,9 +209,36 @@ function App() {
   };
 
   const acceptBreachConsent = async () => {
+    const granted = await browser.permissions.request({ origins: ['https://api.pwnedpasswords.com/*'] });
+    if (!granted) {
+      setBreachConsentError('Permission is needed to contact Have I Been Pwned. No password data was sent.');
+      return;
+    }
     await browser.storage.local.set({ hibpConsentAccepted: true });
     setShowBreachConsent(false);
+    setBreachConsentError('');
     setPage({ name: 'password_audit', kind: 'breached' });
+  };
+
+  const requestSiteAccess = async () => {
+    if (!activeSiteOrigin) { setSiteAccessMessage('Open a regular website tab first.'); return; }
+    const granted = await browser.permissions.request({ origins: [`${activeSiteOrigin}/*`] });
+    if (granted) {
+      const id = `keepass-site-${activeSiteOrigin.replace(/[^a-z0-9]/gi, '-')}`;
+      const registration = {
+        id,
+        matches: [`${activeSiteOrigin}/*`],
+        js: ['content-scripts/content.js'],
+        runAt: 'document_idle' as const,
+        persistAcrossSessions: true,
+      };
+      const registered = await browser.scripting.getRegisteredContentScripts({ ids: [id] });
+      if (registered.length) await browser.scripting.updateContentScripts([registration]);
+      else await browser.scripting.registerContentScripts([registration]);
+    }
+    setSiteAccessMessage(granted
+      ? `Access granted for ${new URL(activeSiteOrigin).hostname}. Refresh the page to enable the fill button.`
+      : 'Site access was not granted.');
   };
 
   const handleDeleteDatabase = async () => {
@@ -323,6 +368,8 @@ function App() {
                   <button role="menuitem" onClick={() => void startAudit('weak')} className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100">Check weak passwords</button>
                   <button role="menuitem" onClick={() => { setMenuOpen(false); setPage({ name: 'generator' }); }} className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100">Password Generator</button>
                   <button role="menuitem" onClick={() => { setMenuOpen(false); void handleExportDatabase(); }} className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100">Export Database</button>
+                  <button role="menuitem" onClick={() => { setMenuOpen(false); setShowVaultMaintenance(true); }} className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100">Backups & Master Password</button>
+                  <button role="menuitem" onClick={() => void requestSiteAccess()} className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100">Enable access on this site</button>
                   <div role="separator" className="my-1 border-t border-gray-100" />
                   <button role="menuitem" onClick={() => { setMenuOpen(false); void handleLock(); }} className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100">Lock Database</button>
                   <button role="menuitem" onClick={() => { setMenuOpen(false); setShowDeleteConfirm(true); }} className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50">Delete Database</button>
@@ -448,6 +495,7 @@ function App() {
           <div role="dialog" aria-modal="true" aria-labelledby="breach-consent-title" className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
             <h3 id="breach-consent-title" className="mb-2 text-lg font-semibold text-gray-900">Check passwords against known breaches?</h3>
             <p className="text-sm text-gray-600">For each distinct saved password, this check sends the first five characters of its SHA-1 hash to Have I Been Pwned. The password and full hash stay on your device; the returned data is compared locally. HIBP receives these partial-hash requests.</p>
+            {breachConsentError && <p role="alert" className="mt-2 text-sm text-red-700">{breachConsentError}</p>}
             <div className="mt-4 flex gap-2">
               <button onClick={() => setShowBreachConsent(false)} className="flex-1 rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200">Cancel</button>
               <button onClick={() => void acceptBreachConsent()} className="flex-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Continue</button>
@@ -455,6 +503,8 @@ function App() {
           </div>
         </div>
       )}
+      {showVaultMaintenance && <VaultMaintenance onClose={() => setShowVaultMaintenance(false)} onRestored={() => void refreshState()} />}
+      {siteAccessMessage && <div role="status" className="fixed bottom-3 left-3 right-3 z-[60] rounded-lg bg-gray-900 px-3 py-2 text-sm text-white shadow-lg" onClick={() => setSiteAccessMessage('')}>{siteAccessMessage}</div>}
     </div>
   );
 }

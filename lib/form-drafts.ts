@@ -97,6 +97,7 @@ export async function clearUnlockDraft(): Promise<void> {
 // ── EntryForm (new + edit) ──────────────────────────────────────
 
 export interface EntryFormDraft {
+  kind?: 'login' | 'secure_note';
   title: string;
   username: string;
   password: string;
@@ -118,6 +119,7 @@ export async function loadEntryFormDraft(entryId?: string): Promise<EntryFormDra
     if (!d || typeof d !== 'object') return null;
     const safeDraft = {
       title: String(d.title ?? ''),
+      kind: d.kind === 'secure_note' ? 'secure_note' as const : 'login' as const,
       username: String(d.username ?? ''),
       url: String(d.url ?? ''),
       notes: String(d.notes ?? ''),
@@ -140,6 +142,7 @@ export async function saveEntryFormDraft(
   try {
     const safeDraft = {
       title: draft.title,
+      kind: draft.kind ?? 'login',
       username: draft.username,
       url: draft.url,
       notes: draft.notes,

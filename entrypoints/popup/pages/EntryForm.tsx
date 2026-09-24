@@ -20,9 +20,11 @@ interface Props {
 export function EntryForm({ entry, onSaved, onCancel, onSessionLost }: Props) {
   const isEditing = !!entry;
 
+  const [kind, setKind] = useState<'login' | 'secure_note'>(entry?.kind ?? 'login');
   const [title, setTitle] = useState(entry?.title ?? '');
   const [username, setUsername] = useState(entry?.username ?? '');
   const [password, setPassword] = useState(entry?.password ?? '');
+  const [totpSecret, setTotpSecret] = useState(entry?.totpSecret ?? '');
   const [url, setUrl] = useState(entry?.url ?? '');
   const [notes, setNotes] = useState(entry?.notes ?? '');
   const [tags, setTags] = useState(entry?.tags.join(', ') ?? '');
@@ -38,6 +40,7 @@ export function EntryForm({ entry, onSaved, onCancel, onSessionLost }: Props) {
     loadEntryFormDraft(entryId).then((draft) => {
       if (draft) {
         setTitle(draft.title);
+        setKind(draft.kind ?? 'login');
         setUsername(draft.username);
         setPassword(draft.password || entry?.password || '');
         setUrl(draft.url);
@@ -48,8 +51,10 @@ export function EntryForm({ entry, onSaved, onCancel, onSessionLost }: Props) {
       } else {
         if (entry) {
           setTitle(entry.title ?? '');
+          setKind(entry.kind ?? 'login');
           setUsername(entry.username ?? '');
           setPassword(entry.password ?? '');
+          setTotpSecret(entry.totpSecret ?? '');
           setUrl(entry.url ?? '');
           setNotes(entry.notes ?? '');
           setTags(entry.tags?.join(', ') ?? '');
@@ -61,7 +66,7 @@ export function EntryForm({ entry, onSaved, onCancel, onSessionLost }: Props) {
     });
   }, [entry?.id]);
 
-  const draft = { title, username, password, url, notes, tags, autoFill };
+  const draft = { kind, title, username, password, url, notes, tags, autoFill };
   const entryId = entry?.id;
 
   // Unsaved changes detection (edit mode only)
@@ -74,18 +79,18 @@ export function EntryForm({ entry, onSaved, onCancel, onSessionLost }: Props) {
   const tagsChanged = tags !== entryTagsStr;
   const autoFillChanged = autoFill !== (entry?.autoFill ?? true);
   const hasUnsavedChanges =
-    isEditing && (titleChanged || usernameChanged || passwordChanged || urlChanged || notesChanged || tagsChanged || autoFillChanged);
+    isEditing && (titleChanged || usernameChanged || passwordChanged || urlChanged || notesChanged || tagsChanged || autoFillChanged || kind !== (entry?.kind ?? 'login') || totpSecret !== (entry?.totpSecret ?? ''));
 
   // Save draft on change (debounced)
   useEffect(() => {
     const t = setTimeout(() => saveEntryFormDraft(draft, entryId), 300);
     return () => clearTimeout(t);
-  }, [title, username, password, url, notes, tags, autoFill, entryId]);
+  }, [kind, title, username, password, url, notes, tags, autoFill, entryId]);
 
   // Save immediately on blur — before popup may close when user clicks away to copy
   const saveDraftNow = useCallback(() => {
     saveEntryFormDraft(draft, entryId);
-  }, [title, username, password, url, notes, tags, autoFill, entryId]);
+  }, [kind, title, username, password, url, notes, tags, autoFill, entryId]);
 
   const handleGeneratePassword = async () => {
     const res = await sendMessage<GeneratePasswordResponse>({
@@ -118,13 +123,15 @@ export function EntryForm({ entry, onSaved, onCancel, onSessionLost }: Props) {
             entry: {
               ...entry,
               title: title.trim(),
+              kind,
               username,
-              password,
+              password: kind === 'login' ? password : '',
+              totpSecret: kind === 'login' ? totpSecret.replace(/\s/g, '') : '',
               url,
               notes,
               tags: parsedTags,
               favorite,
-              autoFill,
+              autoFill: kind === 'login' && autoFill,
             },
           },
         });
@@ -139,14 +146,16 @@ export function EntryForm({ entry, onSaved, onCancel, onSessionLost }: Props) {
           payload: {
             entry: {
               title: title.trim(),
+              kind,
               username,
-              password,
+              password: kind === 'login' ? password : '',
+              totpSecret: kind === 'login' ? totpSecret.replace(/\s/g, '') : '',
               url,
               notes,
               tags: parsedTags,
               groupId: '',
               favorite,
-              autoFill,
+              autoFill: kind === 'login' && autoFill,
             },
           },
         });
@@ -184,6 +193,13 @@ export function EntryForm({ entry, onSaved, onCancel, onSessionLost }: Props) {
 
       <div className="space-y-3" onBlur={saveDraftNow}>
         <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Entry type</label>
+          <select value={kind} onChange={(e) => { const next = e.target.value as 'login' | 'secure_note'; setKind(next); if (next === 'secure_note') setAutoFill(false); }} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+            <option value="login">Login</option>
+            <option value="secure_note">Secure note</option>
+          </select>
+        </div>
+        <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Title *
           </label>
@@ -201,11 +217,12 @@ export function EntryForm({ entry, onSaved, onCancel, onSessionLost }: Props) {
           <input type="checkbox" checked={favorite} onChange={(e) => setFavorite(e.target.checked)} className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" />
           Favorite
         </label>
-        <label className="flex items-center gap-2 text-sm text-gray-700">
+        {kind === 'login' && <label className="flex items-center gap-2 text-sm text-gray-700">
           <input type="checkbox" checked={autoFill} onChange={(e) => setAutoFill(e.target.checked)} className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" />
           Allow Auto Fill
-        </label>
+        </label>}
 
+        {kind === 'login' && <>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Username
@@ -249,6 +266,12 @@ export function EntryForm({ entry, onSaved, onCancel, onSessionLost }: Props) {
         </div>
 
         <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Authenticator secret (Base32)</label>
+          <input type="password" autoComplete="off" value={totpSecret} onChange={(e) => setTotpSecret(e.target.value)} className={fieldClass(isEditing && totpSecret !== (entry?.totpSecret ?? ''))} placeholder="Optional TOTP secret" />
+          <p className="mt-1 text-xs text-gray-500">Stored encrypted in the vault. Spaces and padding are accepted.</p>
+        </div>
+
+        <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             URL
           </label>
@@ -263,6 +286,7 @@ export function EntryForm({ entry, onSaved, onCancel, onSessionLost }: Props) {
             placeholder="italki.com"
           />
         </div>
+        </>}
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">

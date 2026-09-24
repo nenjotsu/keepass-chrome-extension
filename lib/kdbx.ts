@@ -10,6 +10,8 @@ let currentDb: kdbxweb.Kdbx | null = null;
 const FAVORITE_FIELD = 'KeePassChromeExtension.Favorite';
 const AUTO_FILL_FIELD = 'KeePassChromeExtension.AutoFill';
 const AUTO_LOGIN_FIELD = 'KeePassChromeExtension.AutoLogin';
+const ENTRY_KIND_FIELD = 'KeePassChromeExtension.EntryKind';
+const TOTP_FIELD = 'KeePassChromeExtension.TotpSecret';
 
 // ── Database lifecycle ─────────────────────────────────────────
 
@@ -42,6 +44,27 @@ export async function openDatabase(
 export async function saveDatabase(): Promise<ArrayBuffer> {
   if (!currentDb) throw new Error('No database is open');
   return currentDb.save();
+}
+
+/** Verify the current master password without replacing the open database. */
+export async function verifyMasterPassword(password: string): Promise<boolean> {
+  const data = await saveDatabase();
+  const credentials = new kdbxweb.Credentials(kdbxweb.ProtectedValue.fromString(password));
+  await credentials.ready;
+  try {
+    await kdbxweb.Kdbx.load(data, credentials);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Re-encrypt the open vault with a new master password. */
+export async function changeMasterPassword(password: string): Promise<void> {
+  const db = getDb();
+  const credentials = new kdbxweb.Credentials(kdbxweb.ProtectedValue.fromString(password));
+  await credentials.ready;
+  db.credentials = credentials;
 }
 
 /** Close / lock the database, clearing it from memory */
@@ -169,9 +192,11 @@ function kdbxEntryToData(entry: kdbxweb.KdbxEntry): EntryData {
 
   return {
     id: entry.uuid.toString(),
+    kind: getField(ENTRY_KIND_FIELD) === 'secure_note' ? 'secure_note' : 'login',
     title: getField('Title'),
     username: getField('UserName'),
     password: getField('Password'),
+    totpSecret: getField(TOTP_FIELD),
     url: getField('URL'),
     notes: getField('Notes'),
     tags: entry.tags || [],
@@ -255,7 +280,7 @@ function urlMatches(entryUrl: string, pageHostname: string): boolean {
 export function getEntriesForUrl(url: string): EntryData[] {
   const pageHost = toHostname(url);
   if (!pageHost) return [];
-  return getEntries().filter((e) => e.autoFill !== false && e.url && urlMatches(e.url, pageHost));
+  return getEntries().filter((e) => e.kind !== 'secure_note' && e.autoFill !== false && e.url && urlMatches(e.url, pageHost));
 }
 
 /** Find a same-host, same-username entry without exposing its password. */
@@ -291,9 +316,11 @@ export function createEntry(
   );
   entry.fields.set('URL', data.url);
   entry.fields.set('Notes', data.notes);
+  if (data.kind === 'secure_note') entry.fields.set(ENTRY_KIND_FIELD, 'secure_note');
+  if (data.totpSecret) entry.fields.set(TOTP_FIELD, kdbxweb.ProtectedValue.fromString(data.totpSecret));
   entry.tags = data.tags || [];
   if (data.favorite) entry.fields.set(FAVORITE_FIELD, 'true');
-  if (data.autoFill === false) entry.fields.set(AUTO_FILL_FIELD, 'false');
+  if (data.autoFill === false || data.kind === 'secure_note') entry.fields.set(AUTO_FILL_FIELD, 'false');
 
   return kdbxEntryToData(entry);
 }
@@ -314,10 +341,14 @@ export function updateEntry(data: EntryData): EntryData | null {
       );
       entry.fields.set('URL', data.url);
       entry.fields.set('Notes', data.notes);
+      if (data.kind === 'secure_note') entry.fields.set(ENTRY_KIND_FIELD, 'secure_note');
+      else entry.fields.delete(ENTRY_KIND_FIELD);
+      if (data.totpSecret) entry.fields.set(TOTP_FIELD, kdbxweb.ProtectedValue.fromString(data.totpSecret));
+      else entry.fields.delete(TOTP_FIELD);
       entry.tags = data.tags || [];
       if (data.favorite) entry.fields.set(FAVORITE_FIELD, 'true');
       else entry.fields.delete(FAVORITE_FIELD);
-      if (data.autoFill === false) entry.fields.set(AUTO_FILL_FIELD, 'false');
+      if (data.autoFill === false || data.kind === 'secure_note') entry.fields.set(AUTO_FILL_FIELD, 'false');
       else entry.fields.delete(AUTO_FILL_FIELD);
       // Legacy Auto Login metadata is intentionally removed: filling never submits forms.
       entry.fields.delete(AUTO_LOGIN_FIELD);

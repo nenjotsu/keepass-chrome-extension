@@ -20,7 +20,6 @@ const BACKUP_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;  // 30 days
 // ── Global State ─────────────────────────────────────────────────
 
 let editCounter = 0;
-let hourlySnapshotTimeout: number | null = null;
 let lastSnapshotTime = 0;
 
 // ── Initialization ───────────────────────────────────────────────
@@ -29,14 +28,12 @@ export async function initializeBackupSystem(): Promise<void> {
   try {
     console.log('[backup-system] Initializing backup system');
 
-    // Schedule hourly snapshots
-    scheduleHourlySnapshot();
-
     // Load last snapshot time
     const history = await getBackupHistoryInternal(1);
     if (history.length > 0) {
       lastSnapshotTime = history[0].timestamp;
     }
+    await pruneBackups();
 
     console.log('[backup-system] Backup system initialized');
   } catch (err) {
@@ -54,7 +51,7 @@ export async function createSnapshot(
   blob: ArrayBuffer,
   metadata: DatabaseMeta,
   reason: 'hourly' | 'edit_threshold' | 'manual',
-): Promise<void> {
+): Promise<boolean> {
   try {
     const timestamp = Date.now();
     const version = Math.floor(timestamp / 1000);  // Use timestamp as version
@@ -83,8 +80,11 @@ export async function createSnapshot(
     }
 
     lastSnapshotTime = timestamp;
+    await pruneBackups();
+    return true;
   } catch (err) {
     console.error('[backup-system] Failed to create snapshot:', err);
+    return false;
   }
 }
 
@@ -120,27 +120,6 @@ export function shouldCreateHourlySnapshot(): boolean {
   return Date.now() - lastSnapshotTime >= HOURLY_SNAPSHOT_INTERVAL;
 }
 
-// ── Snapshot Scheduling ──────────────────────────────────────────
-
-function scheduleHourlySnapshot(): void {
-  // Clear existing timeout
-  if (hourlySnapshotTimeout !== null) {
-    clearTimeout(hourlySnapshotTimeout);
-  }
-
-  // Schedule next hourly snapshot
-  const timeUntilNext = HOURLY_SNAPSHOT_INTERVAL - (Date.now() - lastSnapshotTime) % HOURLY_SNAPSHOT_INTERVAL;
-
-  // Use setTimeout (available in both browser and service worker contexts)
-  hourlySnapshotTimeout = setTimeout(() => {
-    console.log('[backup-system] Hourly snapshot trigger (but not yet implemented via API)');
-    // In real implementation, would call createSnapshot with 'hourly' reason
-    scheduleHourlySnapshot();  // Reschedule
-  }, timeUntilNext) as unknown as number;
-
-  console.log(`[backup-system] Next hourly snapshot in ${(timeUntilNext / 1000 / 60).toFixed(1)} minutes`);
-}
-
 // ── Backup History ───────────────────────────────────────────────
 
 /**
@@ -170,7 +149,16 @@ async function getBackupHistoryInternal(limit: number = 10): Promise<BackupEntry
 export async function restoreSnapshot(timestamp: number): Promise<ArrayBuffer> {
   const snapshot = await persistentStorage.getBackupSnapshot(timestamp);
   if (!snapshot) throw new Error(`Snapshot ${timestamp} not found`);
+  if (await persistentStorage.calculateChecksum(snapshot.blob) !== snapshot.checksum) {
+    throw new Error('Backup integrity check failed. The snapshot was not restored.');
+  }
   return snapshot.blob;
+}
+
+export async function clearBackupHistory(): Promise<void> {
+  await persistentStorage.clearBackupSnapshots();
+  lastSnapshotTime = 0;
+  editCounter = 0;
 }
 
 // ── Backup Cleanup ───────────────────────────────────────────────
@@ -182,12 +170,7 @@ export async function restoreSnapshot(timestamp: number): Promise<ArrayBuffer> {
  */
 export async function pruneBackups(maxAge: number = BACKUP_RETENTION_MS): Promise<void> {
   try {
-    console.log('[backup-system] Pruning old backups (older than ' + (maxAge / 1000 / 60 / 60 / 24).toFixed(0) + ' days)');
-
-    // TODO: Implement when IndexedDB access is available
-    // Should delete entries from backup_snapshots store where:
-    // timestamp < Date.now() - maxAge
-    // AND total backups > MAX_BACKUPS
+    await persistentStorage.pruneBackupSnapshots(Date.now() - maxAge, MAX_BACKUPS);
   } catch (err) {
     console.warn('[backup-system] Backup pruning failed:', err);
   }
@@ -200,13 +183,15 @@ export async function pruneBackups(maxAge: number = BACKUP_RETENTION_MS): Promis
  */
 export async function getBackupStatistics(): Promise<BackupStatistics> {
   try {
-    // TODO: Implement when IndexedDB access is available
+    const backups = await persistentStorage.getBackupSnapshots(Number.MAX_SAFE_INTEGER);
+    const timestamps = backups.map((backup) => backup.timestamp);
+    const totalStorageUsed = backups.reduce((sum, backup) => sum + backup.blob.byteLength, 0);
     return {
-      totalBackups: 0,
-      oldestBackup: null,
-      newestBackup: null,
-      totalStorageUsed: 0,
-      averageBackupSize: 0,
+      totalBackups: backups.length,
+      oldestBackup: timestamps.length ? Math.min(...timestamps) : null,
+      newestBackup: timestamps.length ? Math.max(...timestamps) : null,
+      totalStorageUsed,
+      averageBackupSize: backups.length ? totalStorageUsed / backups.length : 0,
       autoSnapshotInterval: HOURLY_SNAPSHOT_INTERVAL,
       editThreshold: EDIT_THRESHOLD,
     };
@@ -227,8 +212,5 @@ export async function getBackupStatistics(): Promise<BackupStatistics> {
 // ── Cleanup ──────────────────────────────────────────────────────
 
 export function cleanup(): void {
-  if (hourlySnapshotTimeout !== null) {
-    clearTimeout(hourlySnapshotTimeout);
-    hourlySnapshotTimeout = null;
-  }
+  // No in-memory timer state is retained between service-worker lifetimes.
 }

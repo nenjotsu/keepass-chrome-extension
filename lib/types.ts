@@ -1,9 +1,13 @@
 /** Represents a simplified entry from the kdbx database for UI display */
 export interface EntryData {
+  /** Login credentials are the default for existing KeePass entries. */
+  kind?: 'login' | 'secure_note';
   id: string;
   title: string;
   username: string;
   password: string;
+  /** Optional Base32 TOTP seed. Stored as a protected KDBX field. */
+  totpSecret?: string;
   url: string;
   notes: string;
   tags: string[];

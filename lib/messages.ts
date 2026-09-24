@@ -7,6 +7,7 @@ export type MessageRequest =
   | { type: 'CREATE_DATABASE'; payload: { name: string; password: string } }
   | { type: 'IMPORT_DATABASE'; payload: { data: number[]; password: string } }
   | { type: 'UNLOCK'; payload: { password: string; rememberDurationMs: number } }
+  | { type: 'CHANGE_MASTER_PASSWORD'; payload: { currentPassword: string; newPassword: string } }
   | { type: 'LOCK' }
   | { type: 'SESSION_ACTIVITY' }
   | { type: 'GET_ENTRIES'; payload?: { groupId?: string; search?: string } }
@@ -35,9 +36,9 @@ export type MessageRequest =
   | { type: 'TAKE_PENDING_CREDENTIALS' }
   | { type: 'FILL_IN_TAB'; payload: { tabId: number; entryId: string } }
   | { type: 'GET_BACKUP_HISTORY'; payload?: { limit?: number } }
+  | { type: 'CREATE_BACKUP' }
   | { type: 'RESTORE_FROM_BACKUP'; payload: { timestamp: number; password: string } }
   | { type: 'GET_STORAGE_HEALTH' }
-  | { type: 'GET_RECOVERY_STATUS' }
   | { type: 'GET_ICON' };
 
 // ── Response types ─────────────────────────────────────────────
@@ -84,12 +85,6 @@ export type StorageHealthResponse = MessageResponse<{
     issues: string[];
 }>;
 
-export type RecoveryStatusResponse = MessageResponse<{
-    hasRecoveryCodes: boolean;
-    remainingCodes: number;
-    codesGenerated: number;
-}>;
-
 // ── Constants ──────────────────────────────────────────────────
 
 /** Error code returned when the service worker restarted and DB is no longer in memory */
@@ -119,7 +114,6 @@ export async function sendMessage<T extends MessageResponse = MessageResponse>(
 ): Promise<T> {
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      console.log(`[sendMessage] attempt ${attempt + 1} for ${message.type}`);
       const response = await Promise.race([
         browser.runtime.sendMessage(message) as Promise<MessageResponse>,
         new Promise<undefined>((resolve) =>
@@ -127,17 +121,14 @@ export async function sendMessage<T extends MessageResponse = MessageResponse>(
         ),
       ]);
       if (response !== undefined && response !== null) {
-        console.log(`[sendMessage] got response for ${message.type}:`, response);
         return response as T;
       }
-      console.warn(`[sendMessage] attempt ${attempt + 1}: got undefined/null response`);
     } catch (err) {
-      console.warn(`[sendMessage] attempt ${attempt + 1} failed:`, err);
+      // Do not log request or response data here; messages may contain vault secrets.
     }
     if (attempt < MAX_RETRIES - 1) {
       await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS * (attempt + 1)));
     }
   }
-  console.error(`[sendMessage] all retries exhausted for ${message.type}`);
   return { success: false, error: 'Background service not available' } as T;
 }

@@ -337,6 +337,24 @@ export async function getBackupSnapshot(timestamp: number): Promise<IDBBackupSna
   return getFromIndexedDB<IDBBackupSnapshot>(STORE_BACKUPS, timestamp);
 }
 
+export async function pruneBackupSnapshots(cutoff: number, maxBackups: number): Promise<void> {
+  const backups = (await getAllFromIndexedDB<IDBBackupSnapshot>(STORE_BACKUPS))
+    .sort((a, b) => b.timestamp - a.timestamp);
+  const keep = backups.filter((backup, index) => backup.timestamp >= cutoff && index < maxBackups);
+  const keepTimestamps = new Set(keep.map((backup) => backup.timestamp));
+  for (const backup of backups) {
+    if (!keepTimestamps.has(backup.timestamp)) await deleteFromIndexedDB(STORE_BACKUPS, backup.timestamp);
+  }
+}
+
+export async function clearBackupSnapshots(): Promise<void> {
+  await deleteAllFromObjectStore(STORE_BACKUPS);
+}
+
+export async function clearDatabaseVersions(): Promise<void> {
+  await deleteAllFromObjectStore(STORE_VERSIONS);
+}
+
 // ── Integrity Checking ──────────────────────────────────────────
 
 export async function validateDatabaseIntegrity(blob: ArrayBuffer): Promise<IntegrityCheckResult> {

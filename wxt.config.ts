@@ -29,13 +29,21 @@ function stripFflateWorker(): Plugin {
 // See https://wxt.dev/api/config.html
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
+  hooks: {
+    'build:manifestGenerated': (_wxt, manifest) => {
+      // Keep WXT's content-script bundle in the build output, but require the
+      // background to register it dynamically for user-approved origins only.
+      delete manifest.content_scripts;
+      delete manifest.host_permissions;
+    },
+  },
   manifest: {
     name: 'KeePass Password Manager',
     description:
       'KeePass-compatible password manager with local encryption and optional privacy-preserving breached-password checks.',
     homepage_url: 'https://github.com/Ilya37/keepass-chrome-extension',
-    permissions: ['storage', 'alarms', 'clipboardWrite', 'favicon', 'scripting'],
-    host_permissions: ['<all_urls>'],
+    permissions: ['storage', 'alarms', 'clipboardWrite', 'favicon', 'scripting', 'activeTab'],
+    optional_host_permissions: ['*://*/*', 'https://api.pwnedpasswords.com/*'],
     content_security_policy: {
       extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; style-src 'self' 'unsafe-inline'",
     },
