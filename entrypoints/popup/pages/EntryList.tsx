@@ -31,6 +31,7 @@ export function EntryList({ themeMode, onSelect, onEdit, onAdd, onSessionLost }:
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [groups, setGroups] = useState<GroupData[]>([]);
+  const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(new Set());
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [moveTarget, setMoveTarget] = useState('');
@@ -139,6 +140,8 @@ export function EntryList({ themeMode, onSelect, onEdit, onAdd, onSessionLost }:
   const toggleSelectAll = () => {
     setSelectedIds(allDisplayedSelected ? new Set() : new Set(displayedEntries.map((entry) => entry.id)));
   };
+  const groupsWithChildren = new Set(groups.flatMap((group) => group.parentId ? [group.parentId] : []));
+  const visibleGroups = flattenGroups(groups, collapsedGroupIds);
 
   const handleFill = useCallback(async (entry: EntryData) => {
     if (pageTabId == null || entry.autoFill === false) return;
@@ -178,7 +181,12 @@ export function EntryList({ themeMode, onSelect, onEdit, onAdd, onSessionLost }:
         <button onClick={() => { setActiveGroupId(UNFILED_GROUP_ID); setSelectedIds(new Set()); }} aria-pressed={activeGroupId === UNFILED_GROUP_ID} className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs ${activeGroupId === UNFILED_GROUP_ID ? 'bg-emerald-100 text-emerald-900' : 'text-gray-700 hover:bg-gray-100'}`}>
           <FolderIcon /><span className="flex-1">Unfiled</span>
         </button>
-        {flattenGroups(groups).map(({ group, depth }) => <div key={group.id} className={`flex items-center rounded-md pr-1 ${activeGroupId === group.id ? 'bg-emerald-100' : 'hover:bg-gray-100'}`} style={{ paddingLeft: 8 + Math.max(0, depth) * 16 }}>
+        {visibleGroups.map(({ group, depth }) => <div key={group.id} className={`flex items-center rounded-md pr-1 ${activeGroupId === group.id ? 'bg-emerald-100' : 'hover:bg-gray-100'}`} style={{ paddingLeft: 8 + Math.max(0, depth) * 16 }}>
+          {groupsWithChildren.has(group.id)
+            ? <button type="button" onClick={() => setCollapsedGroupIds((current) => { const next = new Set(current); if (next.has(group.id)) next.delete(group.id); else next.add(group.id); return next; })} aria-label={`${collapsedGroupIds.has(group.id) ? 'Expand' : 'Collapse'} ${group.name}`} aria-expanded={!collapsedGroupIds.has(group.id)} className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-gray-500 hover:bg-gray-200">
+              <svg aria-hidden="true" className={`h-3 w-3 transition-transform ${collapsedGroupIds.has(group.id) ? '' : 'rotate-90'}`} viewBox="0 0 20 20" fill="currentColor"><path d="M7 4.5 12.5 10 7 15.5l1.4 1.4L15.3 10 8.4 3.1 7 4.5Z" /></svg>
+            </button>
+            : <span aria-hidden="true" className="h-5 w-5 flex-shrink-0" />}
           <button onClick={() => { setActiveGroupId(group.id); setSelectedIds(new Set()); }} aria-pressed={activeGroupId === group.id} className={`flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left text-xs ${activeGroupId === group.id ? 'text-emerald-900' : 'text-gray-700'}`}>
             <FolderIcon /><span className="truncate">{group.name}</span>
           </button>
@@ -254,7 +262,7 @@ function groupDepth(group: GroupData, groups: GroupData[]): number {
   return depth;
 }
 
-function flattenGroups(groups: GroupData[]): Array<{ group: GroupData; depth: number }> {
+function flattenGroups(groups: GroupData[], collapsedGroupIds: Set<string>): Array<{ group: GroupData; depth: number }> {
   const children = new Map<string | null, GroupData[]>();
   for (const group of groups) {
     const siblings = children.get(group.parentId) ?? [];
@@ -265,7 +273,7 @@ function flattenGroups(groups: GroupData[]): Array<{ group: GroupData; depth: nu
   const visit = (parentId: string | null, depth: number) => {
     for (const group of children.get(parentId) ?? []) {
       flattened.push({ group, depth });
-      visit(group.id, depth + 1);
+      if (!collapsedGroupIds.has(group.id)) visit(group.id, depth + 1);
     }
   };
   visit(null, 0);
